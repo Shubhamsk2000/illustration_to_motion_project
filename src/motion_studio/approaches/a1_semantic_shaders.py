@@ -1,6 +1,6 @@
 """
 Approach 1: Semantic Segmentation + Procedural Shaders
-As described in test.txt:
+As described in docs/original_idea_notes.txt:
 - Masks Sky, Water/River, Foliage, Sun
 - Element-specific procedural motion (sky drift, sun radial pulse, wind foliage sway, water flow)
 """
@@ -81,15 +81,21 @@ def run_approach_1(img_path, depth_path, out_mp4, out_gif, duration=4.0, fps=30)
     subprocess.run(gif_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     print(f"[Approach 1] Rendered -> {out_mp4} & {out_gif}")
 
+
+def render_samples():
+    """Re-render this approach for the four reference scenes into experiments/."""
+    from motion_studio.paths import EXPERIMENTS_DIR, SAMPLE_NAMES, sample_depth, sample_image
+
+    out_dir = EXPERIMENTS_DIR / "approach_1_semantic_procedural"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    for name in SAMPLE_NAMES:
+        run_approach_1(
+            str(sample_image(name)),
+            str(sample_depth(name)),
+            str(out_dir / f"{name}_approach1.mp4"),
+            str(out_dir / f"{name}_approach1.gif"),
+        )
+
+
 if __name__ == "__main__":
-    os.makedirs("experiments/approach_1_semantic_procedural", exist_ok=True)
-    images = [
-        ("my_favourite_artstyle/image.png", "depth_anything_test.png", "warriors"),
-        ("my_favourite_artstyle/image copy.png", "depth_image_copy.png", "army"),
-        ("my_favourite_artstyle/image copy 2.png", "depth_image_copy_2.png", "king"),
-        ("my_favourite_artstyle/image copy 3.png", "depth_image_copy_3.png", "fox"),
-    ]
-    for img_p, depth_p, name in images:
-        out_mp4 = f"experiments/approach_1_semantic_procedural/{name}_approach1.mp4"
-        out_gif = f"experiments/approach_1_semantic_procedural/{name}_approach1.gif"
-        run_approach_1(img_p, depth_p, out_mp4, out_gif)
+    render_samples()

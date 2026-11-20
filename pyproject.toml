@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "motion-studio"
+version = "0.1.0"
+description = "Turn still AI illustrations into living, looping video clips for history storytelling."
+requires-python = ">=3.11"
+dependencies = [
+    "numpy",
+    "opencv-python-headless",
+    "pillow",
+    "torch",
+    "transformers",
+    "fastapi",
+    "uvicorn",
+    "python-multipart",
+]
+
+[project.scripts]
+motion-batch = "motion_studio.batch:main"
+motion-studio = "motion_studio.web.app:main"
+motion-web-layers = "motion_studio.web_layers:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+motion_studio = ["web/static/**/*"]

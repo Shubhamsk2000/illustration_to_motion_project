@@ -4,8 +4,9 @@ Batch Animation Pipeline for Storytelling Videos
 Processes an entire directory of illustration images and outputs seamless looping MP4 and GIF animations.
 
 Usage:
-    python batch_animate.py --approach 3 --input_dir my_favourite_artstyle --output_dir output_videos
-    python batch_animate.py --approach 4 --image path/to/image.png --output scene_01.mp4
+    motion-batch --approach 3                                  # all samples in assets/samples -> output/videos
+    motion-batch --approach 3 --input_dir my_scenes --output_dir output/my_episode
+    motion-batch --approach 4 --image path/to/image.png --output scene_01.mp4
 """
 
 import os
@@ -15,33 +16,28 @@ import time
 from pathlib import Path
 import cv2
 
+from motion_studio.paths import DEPTH_CACHE_DIR, DEPTH_DIR, OUTPUT_DIR, SAMPLES_DIR
+
 SUPPORTED_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
 
-def get_depth_map(img_path, depth_dir="depth_maps"):
-    """Returns depth map path, computing with Depth-Anything-V2 if not cached."""
-    os.makedirs(depth_dir, exist_ok=True)
+def get_depth_map(img_path):
+    """Returns a depth map path: a bundled one in assets/depth, a cached one, or a fresh estimate."""
     stem = Path(img_path).stem.replace(" ", "_")
-    depth_path = os.path.join(depth_dir, f"{stem}_depth.png")
-    
-    # Check if a precomputed depth map already exists in workspace
-    known_maps = {
-        "image": "depth_anything_test.png",
-        "image_copy": "depth_image_copy.png",
-        "image_copy_2": "depth_image_copy_2.png",
-        "image_copy_3": "depth_image_copy_3.png"
-    }
-    if stem in known_maps and os.path.exists(known_maps[stem]):
-        return known_maps[stem]
-        
-    if os.path.exists(depth_path):
-        return depth_path
-        
+    bundled = DEPTH_DIR / f"{stem}.png"
+    if bundled.exists():
+        return str(bundled)
+
+    DEPTH_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    cached = DEPTH_CACHE_DIR / f"{stem}.png"
+    if cached.exists():
+        return str(cached)
+
     print(f"  [Depth] Estimating depth with Depth-Anything-V2 for {os.path.basename(img_path)}...")
-    from motion_engine import estimate_depth
+    from motion_studio.engine import estimate_depth
     img = cv2.imread(img_path)
-    d = estimate_depth(img)
-    cv2.imwrite(depth_path, d)
-    return depth_path
+    d = estimate_depth(img)  # float32 in [0, 1]
+    cv2.imwrite(str(cached), (d * 255.0).round().astype("uint8"))
+    return str(cached)
 
 def process_single(
     image_path,
@@ -60,16 +56,16 @@ def process_single(
         output_gif = os.path.splitext(output_mp4)[0] + ".gif"
         
     if approach == 1:
-        from experiments.approach_1_semantic_procedural.run_approach_1 import run_approach_1
-        run_approach_1(image_path, output_mp4, output_gif, duration=duration, fps=fps)
+        from motion_studio.approaches.a1_semantic_shaders import run_approach_1
+        run_approach_1(image_path, depth_path, output_mp4, output_gif, duration=duration, fps=fps)
     elif approach == 2:
-        from experiments.approach_2_depth_mesh_parallax.run_approach_2 import run_approach_2
+        from motion_studio.approaches.a2_depth_mesh import run_approach_2
         run_approach_2(image_path, depth_path, output_mp4, output_gif, duration=duration, fps=fps)
     elif approach == 3:
-        from experiments.approach_3_multilayer_2d_parallax.run_approach_3 import run_approach_3
+        from motion_studio.approaches.a3_multilayer_parallax import run_approach_3
         run_approach_3(image_path, depth_path, output_mp4, output_gif, duration=duration, fps=fps)
     elif approach == 4:
-        from experiments.approach_4_subtle_2d_breathing.run_approach_4 import run_approach_4
+        from motion_studio.approaches.a4_breathing import run_approach_4
         run_approach_4(image_path, depth_path, output_mp4, output_gif, duration=duration, fps=fps)
     else:
         raise ValueError(f"Unknown approach: {approach}. Choose from 1, 2, 3, 4.")
@@ -81,9 +77,9 @@ def main():
     parser = argparse.ArgumentParser(description="Batch Illustration-to-Motion Animation Pipeline")
     parser.add_argument("--approach", type=int, default=3, choices=[1, 2, 3, 4],
                         help="1: Semantic Shaders, 2: Depth Mesh Warping, 3: Multi-Layer 2D Parallax (Default/Website), 4: Micro-Parallax + Breathing")
-    parser.add_argument("--input_dir", type=str, default=None, help="Directory containing images to process")
+    parser.add_argument("--input_dir", type=str, default=None, help="Directory containing images to process (default: assets/samples)")
     parser.add_argument("--image", type=str, default=None, help="Single image file to process")
-    parser.add_argument("--output_dir", type=str, default="output_videos", help="Directory to save rendered MP4s")
+    parser.add_argument("--output_dir", type=str, default=str(OUTPUT_DIR / "videos"), help="Directory to save rendered MP4s")
     parser.add_argument("--output", type=str, default=None, help="Output MP4 path for single image mode")
     parser.add_argument("--duration", type=float, default=4.0, help="Loop duration in seconds (default: 4.0)")
     parser.add_argument("--fps", type=int, default=30, help="Frames per second (default: 30)")
@@ -101,7 +97,7 @@ def main():
         )
         return
         
-    input_dir = args.input_dir or "my_favourite_artstyle"
+    input_dir = args.input_dir or str(SAMPLES_DIR)
     if not os.path.exists(input_dir):
         print(f"Error: Input directory '{input_dir}' does not exist.")
         sys.exit(1)
