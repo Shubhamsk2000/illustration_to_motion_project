@@ -1,0 +1,802 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Illustration Motion Studio — Multi-Layer 2D Parallax Review</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        .parallax-container {
+            perspective: 1000px;
+            transform-style: preserve-3d;
+            overflow: hidden;
+            position: relative;
+        }
+        .layer-bg, .layer-mid, .layer-fg {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            pointer-events: none;
+            transition: transform 0.08s ease-out;
+            will-change: transform;
+        }
+        @keyframes breath {
+            0%, 100% { transform: scale(1.0, 1.0); }
+            50% { transform: scale(1.006, 1.014); }
+        }
+        .breathing-active {
+            animation: breath 4s ease-in-out infinite;
+            transform-origin: 50% 85%;
+        }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen antialiased flex flex-col">
+
+    <!-- Navbar -->
+    <header class="border-b border-slate-800 bg-slate-900/80 backdrop-blur sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+            <div class="flex items-center space-x-3">
+                <span class="text-2xl">✨</span>
+                <div>
+                    <h1 class="text-lg font-bold bg-gradient-to-r from-amber-400 via-emerald-400 to-sky-400 bg-clip-text text-transparent">
+                        Illustration Motion Studio
+                    </h1>
+                    <p class="text-xs text-slate-400">2D Multi-Layer Parallax vs Depth Mesh vs Shaders</p>
+                </div>
+            </div>
+            <div class="flex items-center space-x-2 text-xs">
+                <span class="px-2.5 py-1 rounded-full bg-emerald-950/80 text-emerald-400 border border-emerald-800/60 font-medium flex items-center gap-1.5">
+                    <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span> 100% Local CPU
+                </span>
+                <span class="px-2.5 py-1 rounded-full bg-sky-950/80 text-sky-400 border border-sky-800/60 font-medium">
+                    Zero Water Warping
+                </span>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Container -->
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex-1 w-full space-y-8">
+
+        <!-- Image Selector Strip -->
+        <section class="bg-slate-900/60 border border-slate-800 rounded-2xl p-5 shadow-xl backdrop-blur">
+            <div class="flex items-center justify-between mb-4">
+                <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-2">
+                    <i class="fa-solid fa-images text-amber-400"></i> Select Illustration Sample
+                </h2>
+                <span class="text-xs text-slate-500">4 distinct storytelling scenes analyzed</span>
+            </div>
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-4" id="image-selector-grid">
+                <!-- Injected via JavaScript -->
+            </div>
+        </section>
+
+        <!-- View Navigation Tabs -->
+        <div class="flex border-b border-slate-800 space-x-6 text-sm font-medium">
+            <button id="tab-btn-matrix" onclick="switchTab('matrix')" class="tab-btn border-b-2 border-amber-400 text-amber-400 pb-3 flex items-center gap-2">
+                <i class="fa-solid fa-table-cells-large"></i> 4-Way Approach Comparison Matrix
+            </button>
+            <button id="tab-btn-interactive" onclick="switchTab('interactive')" class="tab-btn border-b-2 border-transparent text-slate-400 hover:text-slate-200 pb-3 flex items-center gap-2">
+                <i class="fa-solid fa-mouse-pointer text-emerald-400"></i> Live Interactive Website Parallax Studio
+            </button>
+            <button id="tab-btn-export" onclick="switchTab('export')" class="tab-btn border-b-2 border-transparent text-slate-400 hover:text-slate-200 pb-3 flex items-center gap-2">
+                <i class="fa-solid fa-sliders text-sky-400"></i> Custom Parameter Tuning & Export
+            </button>
+        </div>
+
+        <!-- TAB 1: 4-Way Matrix Comparison -->
+        <section id="tab-content-matrix" class="space-y-6">
+            <!-- Control bar -->
+            <div class="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-4 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                <div>
+                    <h3 class="font-bold text-slate-100 flex items-center gap-2 text-base" id="active-scene-title">
+                        Samurai Warriors in Field
+                    </h3>
+                    <p class="text-xs text-slate-400 mt-1">
+                        Full-resolution uncropped videos. Compare continuous mesh warping vs rigid multi-plane translation.
+                    </p>
+                </div>
+                <div class="flex flex-wrap items-center gap-2.5">
+                    <!-- Sync Button -->
+                    <button onclick="syncAllVideos()" class="px-3 py-1.5 text-xs font-medium rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 flex items-center gap-1.5 shadow" title="Reset all 4 videos to 00:00 simultaneously">
+                        <i class="fa-solid fa-rotate text-amber-400"></i> Sync Playback
+                    </button>
+
+                    <!-- Format toggle -->
+                    <div class="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-800">
+                        <button onclick="toggleMediaFormat('mp4')" id="format-mp4-btn" class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-amber-500 text-slate-950 shadow">
+                            MP4 Video
+                        </button>
+                        <button onclick="toggleMediaFormat('gif')" id="format-gif-btn" class="px-3 py-1.5 text-xs font-semibold rounded-lg text-slate-400 hover:text-slate-200">
+                            GIF Preview
+                        </button>
+                    </div>
+
+                    <!-- Layout switcher -->
+                    <div class="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-800 text-xs">
+                        <button onclick="switchLayout('grid-2')" id="layout-2-btn" class="px-2.5 py-1.5 rounded-lg bg-slate-800 text-slate-200 font-medium" title="2 Large Columns (Recommended)">
+                            <i class="fa-solid fa-grip"></i> 2x2 Large
+                        </button>
+                        <button onclick="switchLayout('grid-1')" id="layout-1-btn" class="px-2.5 py-1.5 rounded-lg text-slate-400 hover:text-slate-200 font-medium" title="1 Huge Column">
+                            <i class="fa-solid fa-square"></i> Single
+                        </button>
+                        <button onclick="switchLayout('grid-4')" id="layout-4-btn" class="px-2.5 py-1.5 rounded-lg text-slate-400 hover:text-slate-200 font-medium" title="4 Columns Overview">
+                            <i class="fa-solid fa-table-cells"></i> 4 Col
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 4 Cards Grid: Full size, uncropped, naturally sized -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-8" id="approaches-grid">
+                <!-- Dynamically rendered -->
+            </div>
+        </section>
+
+        <!-- TAB 2: Live Interactive Website Parallax -->
+        <section id="tab-content-interactive" class="hidden space-y-6">
+            <div class="bg-gradient-to-r from-emerald-950/30 via-slate-900 to-sky-950/30 border border-slate-800 rounded-2xl p-6">
+                <div class="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 mb-6">
+                    <div>
+                        <span class="text-xs font-bold uppercase tracking-wider text-emerald-400 bg-emerald-950/80 px-2.5 py-1 rounded border border-emerald-800">
+                            Website Hero Parallax Simulation
+                        </span>
+                        <h3 class="text-xl font-bold text-slate-100 mt-2">
+                            Interactive Multiplane Parallax (Move Mouse Over Image)
+                        </h3>
+                        <p class="text-xs text-slate-400 mt-1 max-w-2xl">
+                            Each layer is a clean, discrete 2D cutout. As you move your cursor, notice how the background slides at a gentle opposite speed while the characters stay completely rigid. Zero warping, zero rubber deformation!
+                        </p>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <button onclick="toggleParallaxMode('mouse')" id="mode-mouse-btn" class="px-3 py-2 text-xs font-medium rounded-lg bg-emerald-500 text-slate-950 font-bold shadow">
+                            <i class="fa-solid fa-arrow-pointer mr-1"></i> Mouse Tracking
+                        </button>
+                        <button onclick="toggleParallaxMode('auto')" id="mode-auto-btn" class="px-3 py-2 text-xs font-medium rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700">
+                            <i class="fa-solid fa-play mr-1"></i> Auto-Loop
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Interactive Parallax Canvas Stage (Full uncropped height) -->
+                <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
+                    <div class="lg:col-span-8 flex justify-center">
+                        <div id="parallax-stage" class="parallax-container w-full max-w-xl h-[620px] rounded-2xl border-2 border-slate-700/80 shadow-2xl relative bg-black cursor-crosshair">
+                            <!-- Background Layer -->
+                            <img id="stage-bg" class="layer-bg" src="" alt="Background">
+                            <!-- Midground / Character Layer -->
+                            <img id="stage-mid" class="layer-mid" src="" alt="Subject">
+                            <!-- Foreground Framing Layer -->
+                            <img id="stage-fg" class="layer-fg" src="" alt="Foreground">
+                            
+                            <!-- Overlay coordinate readout -->
+                            <div class="absolute bottom-3 left-3 bg-slate-900/80 backdrop-blur px-3 py-1.5 rounded-lg border border-slate-700/60 text-[11px] font-mono text-slate-300 pointer-events-none">
+                                Offset: X: <span id="readout-x" class="text-emerald-400 font-bold">0px</span> | Y: <span id="readout-y" class="text-sky-400 font-bold">0px</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Live Sliders & Controls -->
+                    <div class="lg:col-span-4 bg-slate-900/90 border border-slate-800 rounded-xl p-5 space-y-5">
+                        <h4 class="text-sm font-bold text-slate-200 border-b border-slate-800 pb-2 flex items-center gap-2">
+                            <i class="fa-solid fa-sliders text-emerald-400"></i> Motion Settings
+                        </h4>
+
+                        <!-- Amplitude X -->
+                        <div class="space-y-1.5">
+                            <div class="flex justify-between text-xs">
+                                <span class="text-slate-400">Horizontal Drift (X)</span>
+                                <span id="val-amp-x" class="text-slate-200 font-mono font-bold">12 px</span>
+                            </div>
+                            <input type="range" id="slider-amp-x" min="0" max="30" value="12" class="w-full accent-emerald-400">
+                        </div>
+
+                        <!-- Amplitude Y -->
+                        <div class="space-y-1.5">
+                            <div class="flex justify-between text-xs">
+                                <span class="text-slate-400">Vertical Drift (Y)</span>
+                                <span id="val-amp-y" class="text-slate-200 font-mono font-bold">6 px</span>
+                            </div>
+                            <input type="range" id="slider-amp-y" min="0" max="20" value="6" class="w-full accent-sky-400">
+                        </div>
+
+                        <!-- Breathing Scale -->
+                        <div class="pt-2 border-t border-slate-800 space-y-2">
+                            <div class="flex items-center justify-between">
+                                <span class="text-xs text-slate-300 font-medium">Character Chest Breathing</span>
+                                <input type="checkbox" id="check-breathing" checked class="w-4 h-4 accent-emerald-400 rounded">
+                            </div>
+                            <p class="text-[11px] text-slate-500 leading-tight">
+                                Anchors at character base, expanding chest vertically (+0.8%) like Approach 4.
+                            </p>
+                        </div>
+
+                        <!-- Layer Visibility Toggles -->
+                        <div class="pt-2 border-t border-slate-800 space-y-2 text-xs">
+                            <span class="text-slate-400 block font-medium">Toggle Layer Planes:</span>
+                            <div class="flex gap-2">
+                                <label class="flex items-center gap-1.5 text-slate-300 cursor-pointer bg-slate-800 px-2.5 py-1 rounded">
+                                    <input type="checkbox" id="toggle-layer-bg" checked class="accent-amber-400"> BG
+                                </label>
+                                <label class="flex items-center gap-1.5 text-slate-300 cursor-pointer bg-slate-800 px-2.5 py-1 rounded">
+                                    <input type="checkbox" id="toggle-layer-mid" checked class="accent-emerald-400"> Subject
+                                </label>
+                                <label class="flex items-center gap-1.5 text-slate-300 cursor-pointer bg-slate-800 px-2.5 py-1 rounded">
+                                    <input type="checkbox" id="toggle-layer-fg" checked class="accent-sky-400"> FG
+                                </label>
+                            </div>
+                        </div>
+
+                        <!-- Reset Button -->
+                        <button onclick="resetStage()" class="w-full py-2 text-xs font-semibold rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition">
+                            Center Viewport
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- TAB 3: Custom Render & Export -->
+        <section id="tab-content-export" class="hidden space-y-6">
+            <div class="bg-slate-900/60 border border-slate-800 rounded-2xl p-6">
+                <h3 class="text-lg font-bold text-slate-100 flex items-center gap-2 mb-2">
+                    <i class="fa-solid fa-video text-sky-400"></i> Render Custom Multi-Layer Loop (MP4 & GIF)
+                </h3>
+                <p class="text-xs text-slate-400 mb-6">
+                    Export a customized seamless looping video for YouTube or website use with your exact preferred amplitudes.
+                </p>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    <!-- Form Controls -->
+                    <form id="render-form" onsubmit="handleCustomRender(event)" class="space-y-4">
+                        <div class="space-y-1">
+                            <label class="text-xs font-medium text-slate-300">Selected Illustration</label>
+                            <input type="text" id="custom-image-name" readonly class="w-full bg-slate-800/80 border border-slate-700 rounded-lg px-3 py-2 text-xs text-amber-400 font-bold">
+                        </div>
+
+                        <div class="grid grid-cols-2 gap-4">
+                            <div class="space-y-1">
+                                <label class="text-xs text-slate-400">Background Shift X (px)</label>
+                                <input type="number" step="0.5" id="form-bg-x" value="-3.0" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-100">
+                            </div>
+                            <div class="space-y-1">
+                                <label class="text-xs text-slate-400">Background Shift Y (px)</label>
+                                <input type="number" step="0.5" id="form-bg-y" value="-1.5" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-100">
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-2 gap-4">
+                            <div class="space-y-1">
+                                <label class="text-xs text-slate-400">Subject Motion X (px)</label>
+                                <input type="number" step="0.5" id="form-subj-x" value="3.5" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-100">
+                            </div>
+                            <div class="space-y-1">
+                                <label class="text-xs text-slate-400">Subject Motion Y (px)</label>
+                                <input type="number" step="0.5" id="form-subj-y" value="1.5" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-100">
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-2 gap-4">
+                            <div class="space-y-1">
+                                <label class="text-xs text-slate-400">Breathing Expansion Scale</label>
+                                <input type="number" step="0.001" id="form-breathing" value="0.007" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-100">
+                            </div>
+                            <div class="space-y-1">
+                                <label class="text-xs text-slate-400">Loop Duration (seconds)</label>
+                                <input type="number" step="1" id="form-duration" value="4" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-100">
+                            </div>
+                        </div>
+
+                        <button type="submit" id="render-btn" class="w-full py-3 rounded-xl bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 text-slate-950 font-bold text-sm shadow-lg flex items-center justify-center gap-2">
+                            <i class="fa-solid fa-gear"></i> Render Customized Video Loop
+                        </button>
+                    </form>
+
+                    <!-- Result Box -->
+                    <div class="bg-slate-950 border border-slate-800 rounded-xl p-5 flex flex-col items-center justify-center text-center">
+                        <div id="render-placeholder" class="text-slate-500 space-y-2">
+                            <i class="fa-solid fa-film text-4xl text-slate-700"></i>
+                            <p class="text-xs">Select options and click Render to generate a new loop.</p>
+                        </div>
+
+                        <div id="render-loading" class="hidden space-y-3">
+                            <i class="fa-solid fa-circle-notch fa-spin text-3xl text-sky-400"></i>
+                            <p class="text-xs text-slate-300">Rendering multiplane frames on CPU... (~5-8s)</p>
+                        </div>
+
+                        <div id="render-output" class="hidden w-full space-y-4">
+                            <video id="custom-video-player" controls autoplay loop class="w-full max-h-96 rounded-lg border border-slate-700 shadow-lg object-contain bg-black"></video>
+                            <div class="flex gap-3 justify-center">
+                                <a id="download-mp4" href="" download class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold flex items-center gap-1.5">
+                                    <i class="fa-solid fa-download"></i> Download MP4
+                                </a>
+                                <a id="download-gif" href="" download class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-bold flex items-center gap-1.5">
+                                    <i class="fa-solid fa-image"></i> Download GIF
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Theater Modal Overlay -->
+    <div id="theater-modal" class="fixed inset-0 z-50 bg-black/95 backdrop-blur-md hidden flex flex-col p-4 sm:p-8 items-center justify-center">
+        <!-- Close button -->
+        <button onclick="closeTheater()" class="absolute top-4 right-6 text-slate-400 hover:text-white text-2xl p-2 z-10 transition">
+            <i class="fa-solid fa-xmark"></i>
+        </button>
+
+        <div class="w-full max-w-5xl flex flex-col items-center space-y-4">
+            <div class="flex items-center justify-between w-full px-2">
+                <h3 id="theater-title" class="text-base font-bold text-slate-200">Theater Inspection</h3>
+                <div class="flex items-center gap-2 text-xs">
+                    <span class="text-slate-400">Speed:</span>
+                    <button onclick="setTheaterSpeed(0.25)" class="px-2 py-1 bg-slate-800 hover:bg-slate-700 rounded text-slate-300 font-mono">0.25x</button>
+                    <button onclick="setTheaterSpeed(0.5)" class="px-2 py-1 bg-slate-800 hover:bg-slate-700 rounded text-slate-300 font-mono">0.5x</button>
+                    <button onclick="setTheaterSpeed(1.0)" class="px-2 py-1 bg-amber-500 text-slate-950 font-bold rounded font-mono">1.0x</button>
+                </div>
+            </div>
+
+            <!-- Media Container -->
+            <div class="relative w-full flex items-center justify-center bg-black/80 rounded-2xl border border-slate-800 p-2 shadow-2xl">
+                <video id="theater-video" controls autoplay loop playsinline class="max-h-[82vh] w-auto max-w-full object-contain rounded-xl shadow-2xl"></video>
+                <img id="theater-img" class="max-h-[82vh] w-auto max-w-full object-contain rounded-xl shadow-2xl hidden" alt="Theater Preview">
+            </div>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="border-t border-slate-800 bg-slate-900/40 py-4 text-center text-xs text-slate-500">
+        Illustration Motion Studio &bull; Discrete 2D Multiplane Animation Pipeline &bull; CPU-Optimized
+    </footer>
+
+    <!-- App JavaScript Logic -->
+    <script>
+        let appData = null;
+        let activeImageId = "warriors";
+        let activeFormat = "mp4";
+        let activeLayout = "grid-2"; // "grid-2", "grid-1", "grid-4"
+        let parallaxMode = "mouse"; // "mouse" or "auto"
+        let autoLoopTimer = null;
+
+        async function init() {
+            try {
+                const res = await fetch('/api/data');
+                appData = await res.json();
+                renderImageSelector();
+                selectImage(activeImageId);
+                initParallaxMouseListener();
+            } catch (err) {
+                console.error("Failed to load app data:", err);
+            }
+        }
+
+        function renderImageSelector() {
+            const grid = document.getElementById('image-selector-grid');
+            grid.innerHTML = '';
+            appData.images.forEach(img => {
+                const card = document.createElement('div');
+                card.className = `cursor-pointer rounded-xl border p-2.5 transition flex items-center space-x-3 ${
+                    img.id === activeImageId 
+                        ? 'border-amber-400 bg-amber-950/20 shadow-md ring-1 ring-amber-400' 
+                        : 'border-slate-800 bg-slate-900/40 hover:border-slate-700'
+                }`;
+                card.id = `selector-card-${img.id}`;
+                card.onclick = () => selectImage(img.id);
+                card.innerHTML = `
+                    <img src="${img.source}" alt="${img.title}" class="w-12 h-12 object-cover rounded-lg border border-slate-700">
+                    <div class="overflow-hidden">
+                        <h4 class="text-xs font-bold text-slate-200 truncate">${img.title}</h4>
+                        <span class="text-[10px] text-slate-400">ID: ${img.id}</span>
+                    </div>
+                `;
+                grid.appendChild(card);
+            });
+        }
+
+        function selectImage(imageId) {
+            activeImageId = imageId;
+            const currentImg = appData.images.find(i => i.id === imageId);
+            if (!currentImg) return;
+
+            // Highlight in selector
+            appData.images.forEach(img => {
+                const el = document.getElementById(`selector-card-${img.id}`);
+                if (el) {
+                    if (img.id === imageId) {
+                        el.className = 'cursor-pointer rounded-xl border border-amber-400 bg-amber-950/20 shadow-md ring-1 ring-amber-400 p-2.5 transition flex items-center space-x-3';
+                    } else {
+                        el.className = 'cursor-pointer rounded-xl border border-slate-800 bg-slate-900/40 hover:border-slate-700 p-2.5 transition flex items-center space-x-3';
+                    }
+                }
+            });
+
+            document.getElementById('active-scene-title').textContent = currentImg.title;
+            document.getElementById('custom-image-name').value = `${currentImg.title} (${currentImg.id})`;
+
+            // Update Matrix View
+            renderMatrixCards(currentImg);
+
+            // Update Parallax Stage layers
+            document.getElementById('stage-bg').src = currentImg.layers.bg;
+            document.getElementById('stage-mid').src = currentImg.layers.mid;
+            document.getElementById('stage-fg').src = currentImg.layers.fg;
+
+            // Reset stage transforms
+            resetStage();
+        }
+
+        function renderMatrixCards(currentImg) {
+            const grid = document.getElementById('approaches-grid');
+            grid.innerHTML = '';
+
+            const approachKeys = ['approach1', 'approach2', 'approach3', 'approach4'];
+            approachKeys.forEach(k => {
+                const info = appData.approaches[k];
+                const media = currentImg.approaches[k];
+                const isWinner = (k === 'approach3' || k === 'approach4');
+
+                const card = document.createElement('div');
+                card.className = `rounded-2xl border flex flex-col justify-between overflow-hidden bg-slate-900/80 shadow-2xl transition hover:border-slate-600 p-5 space-y-4 ${
+                    isWinner ? 'border-amber-400/80 ring-2 ring-amber-400/20' : 'border-slate-800'
+                }`;
+
+                // Unfixed height media element: completely visible with natural aspect ratio
+                const mediaEl = activeFormat === 'mp4'
+                    ? `<video src="${media.mp4}" autoplay loop muted playsinline controls class="w-full h-auto max-h-[640px] object-contain rounded-xl bg-black/95 shadow-2xl video-matrix-item"></video>`
+                    : `<img src="${media.gif}" alt="${info.title}" class="w-full h-auto max-h-[640px] object-contain rounded-xl bg-black/95 shadow-2xl">`;
+
+                const theaterCall = activeFormat === 'mp4'
+                    ? `openTheater('${media.mp4}', '${info.title}')`
+                    : `openTheaterImg('${media.gif}', '${info.title}')`;
+
+                card.innerHTML = `
+                    <div class="space-y-3">
+                        <!-- Top Header with Badges & Theater Button -->
+                        <div class="flex items-start justify-between gap-2 border-b border-slate-800/80 pb-3">
+                            <div>
+                                <h4 class="text-base font-bold text-slate-100">${info.title}</h4>
+                                <span class="text-xs text-amber-400/90 font-medium">${info.motion_type}</span>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <span class="text-[11px] font-bold px-2.5 py-1 rounded-full ${
+                                    isWinner ? 'bg-amber-500 text-slate-950 shadow font-extrabold' : 'bg-slate-800 text-slate-300'
+                                }">
+                                    ${info.badge}
+                                </span>
+                                <button onclick="${theaterCall}" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs flex items-center gap-1 transition" title="Inspect Fullscreen">
+                                    <i class="fa-solid fa-expand"></i>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Video / Media Container (Full Uncropped Display) -->
+                        <div class="relative w-full bg-slate-950/90 rounded-2xl border border-slate-800/80 p-2 flex items-center justify-center">
+                            ${mediaEl}
+                        </div>
+
+                        <!-- Description -->
+                        <p class="text-xs text-slate-300 leading-relaxed pt-1">${info.description}</p>
+                    </div>
+
+                    <!-- Bottom Details & Direct Actions -->
+                    <div class="space-y-3 pt-2">
+                        <div class="text-[11px] bg-slate-950/70 p-3 rounded-xl border border-slate-800/70 space-y-1.5">
+                            <p class="flex items-start gap-1.5">
+                                <strong class="text-emerald-400 whitespace-nowrap"><i class="fa-solid fa-check mr-0.5"></i> Pros:</strong>
+                                <span class="text-slate-300">${info.pros}</span>
+                            </p>
+                            <p class="flex items-start gap-1.5">
+                                <strong class="text-rose-400 whitespace-nowrap"><i class="fa-solid fa-xmark mr-0.5"></i> Cons:</strong>
+                                <span class="text-slate-400">${info.cons}</span>
+                            </p>
+                        </div>
+                        <div class="flex gap-2 text-xs">
+                            <a href="${media.mp4}" target="_blank" download class="flex-1 py-2 text-center bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg font-semibold flex items-center justify-center gap-1.5 transition">
+                                <i class="fa-solid fa-download"></i> Download MP4
+                            </a>
+                            <a href="${media.gif}" target="_blank" download class="flex-1 py-2 text-center bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg font-semibold flex items-center justify-center gap-1.5 transition">
+                                <i class="fa-solid fa-image"></i> Download GIF
+                            </a>
+                        </div>
+                    </div>
+                `;
+                grid.appendChild(card);
+            });
+        }
+
+        function switchLayout(layout) {
+            activeLayout = layout;
+            const grid = document.getElementById('approaches-grid');
+            const btn2 = document.getElementById('layout-2-btn');
+            const btn1 = document.getElementById('layout-1-btn');
+            const btn4 = document.getElementById('layout-4-btn');
+
+            btn2.className = 'px-2.5 py-1.5 rounded-lg text-slate-400 hover:text-slate-200 font-medium';
+            btn1.className = 'px-2.5 py-1.5 rounded-lg text-slate-400 hover:text-slate-200 font-medium';
+            btn4.className = 'px-2.5 py-1.5 rounded-lg text-slate-400 hover:text-slate-200 font-medium';
+
+            if (layout === 'grid-2') {
+                grid.className = 'grid grid-cols-1 lg:grid-cols-2 gap-8';
+                btn2.className = 'px-2.5 py-1.5 rounded-lg bg-slate-800 text-slate-200 font-medium';
+            } else if (layout === 'grid-1') {
+                grid.className = 'grid grid-cols-1 gap-10 max-w-4xl mx-auto';
+                btn1.className = 'px-2.5 py-1.5 rounded-lg bg-slate-800 text-slate-200 font-medium';
+            } else if (layout === 'grid-4') {
+                grid.className = 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6';
+                btn4.className = 'px-2.5 py-1.5 rounded-lg bg-slate-800 text-slate-200 font-medium';
+            }
+        }
+
+        function syncAllVideos() {
+            const videos = document.querySelectorAll('.video-matrix-item');
+            videos.forEach(v => {
+                v.currentTime = 0;
+                v.play();
+            });
+        }
+
+        // Theater Lightbox Functions
+        function openTheater(videoSrc, title) {
+            const modal = document.getElementById('theater-modal');
+            const vid = document.getElementById('theater-video');
+            const img = document.getElementById('theater-img');
+            document.getElementById('theater-title').textContent = title;
+            vid.classList.remove('hidden');
+            img.classList.add('hidden');
+            vid.src = videoSrc;
+            vid.playbackRate = 1.0;
+            vid.play();
+            modal.classList.remove('hidden');
+        }
+
+        function openTheaterImg(imgSrc, title) {
+            const modal = document.getElementById('theater-modal');
+            const vid = document.getElementById('theater-video');
+            const img = document.getElementById('theater-img');
+            document.getElementById('theater-title').textContent = title;
+            vid.classList.add('hidden');
+            img.classList.remove('hidden');
+            img.src = imgSrc;
+            modal.classList.remove('hidden');
+        }
+
+        function closeTheater() {
+            const modal = document.getElementById('theater-modal');
+            const vid = document.getElementById('theater-video');
+            vid.pause();
+            vid.src = '';
+            modal.classList.add('hidden');
+        }
+
+        function setTheaterSpeed(rate) {
+            const vid = document.getElementById('theater-video');
+            vid.playbackRate = rate;
+        }
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') closeTheater();
+        });
+
+        function toggleMediaFormat(fmt) {
+            activeFormat = fmt;
+            const mp4Btn = document.getElementById('format-mp4-btn');
+            const gifBtn = document.getElementById('format-gif-btn');
+            if (fmt === 'mp4') {
+                mp4Btn.className = 'px-3 py-1.5 text-xs font-semibold rounded-lg bg-amber-500 text-slate-950 shadow';
+                gifBtn.className = 'px-3 py-1.5 text-xs font-semibold rounded-lg text-slate-400 hover:text-slate-200';
+            } else {
+                gifBtn.className = 'px-3 py-1.5 text-xs font-semibold rounded-lg bg-amber-500 text-slate-950 shadow';
+                mp4Btn.className = 'px-3 py-1.5 text-xs font-semibold rounded-lg text-slate-400 hover:text-slate-200';
+            }
+            const currentImg = appData.images.find(i => i.id === activeImageId);
+            if (currentImg) renderMatrixCards(currentImg);
+        }
+
+        function switchTab(tab) {
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                btn.className = 'tab-btn border-b-2 border-transparent text-slate-400 hover:text-slate-200 pb-3 flex items-center gap-2';
+            });
+            document.getElementById('tab-content-matrix').classList.add('hidden');
+            document.getElementById('tab-content-interactive').classList.add('hidden');
+            document.getElementById('tab-content-export').classList.add('hidden');
+
+            document.getElementById(`tab-btn-${tab}`).className = 'tab-btn border-b-2 border-amber-400 text-amber-400 pb-3 flex items-center gap-2';
+            document.getElementById(`tab-content-${tab}`).classList.remove('hidden');
+
+            if (tab === 'interactive' && parallaxMode === 'auto') {
+                startAutoLoop();
+            } else {
+                stopAutoLoop();
+            }
+        }
+
+        // Live Interactive Website Parallax
+        function initParallaxMouseListener() {
+            const stage = document.getElementById('parallax-stage');
+            const bg = document.getElementById('stage-bg');
+            const mid = document.getElementById('stage-mid');
+            const fg = document.getElementById('stage-fg');
+            const readoutX = document.getElementById('readout-x');
+            const readoutY = document.getElementById('readout-y');
+
+            const sliderX = document.getElementById('slider-amp-x');
+            const sliderY = document.getElementById('slider-amp-y');
+            const valX = document.getElementById('val-amp-x');
+            const valY = document.getElementById('val-amp-y');
+            const checkBreath = document.getElementById('check-breathing');
+
+            sliderX.oninput = () => valX.textContent = `${sliderX.value} px`;
+            sliderY.oninput = () => valY.textContent = `${sliderY.value} px`;
+
+            checkBreath.onchange = () => {
+                if (checkBreath.checked) {
+                    mid.classList.add('breathing-active');
+                } else {
+                    mid.classList.remove('breathing-active');
+                }
+            };
+            if (checkBreath.checked) mid.classList.add('breathing-active');
+
+            stage.addEventListener('mousemove', (e) => {
+                if (parallaxMode !== 'mouse') return;
+                const rect = stage.getBoundingClientRect();
+                const normX = ((e.clientX - rect.left) / rect.width) * 2 - 1; // -1 to 1
+                const normY = ((e.clientY - rect.top) / rect.height) * 2 - 1;
+
+                const ampX = parseFloat(sliderX.value);
+                const ampY = parseFloat(sliderY.value);
+
+                // Multiplane math: Background moves opposite, midground moves subtle, foreground moves fast
+                const bgX = -normX * (ampX * 0.4);
+                const bgY = -normY * (ampY * 0.4);
+
+                const midX = normX * (ampX * 0.6);
+                const midY = normY * (ampY * 0.6);
+
+                const fgX = normX * (ampX * 1.5);
+                const fgY = normY * (ampY * 1.5);
+
+                bg.style.transform = `translate3d(${bgX}px, ${bgY}px, 0)`;
+                mid.style.transform = `translate3d(${midX}px, ${midY}px, 0)`;
+                fg.style.transform = `translate3d(${fgX}px, ${fgY}px, 0)`;
+
+                readoutX.textContent = `${midX.toFixed(1)}px`;
+                readoutY.textContent = `${midY.toFixed(1)}px`;
+            });
+
+            stage.addEventListener('mouseleave', () => {
+                if (parallaxMode === 'mouse') resetStage();
+            });
+
+            // Layer Visibility
+            document.getElementById('toggle-layer-bg').onchange = (e) => {
+                bg.style.opacity = e.target.checked ? '1' : '0';
+            };
+            document.getElementById('toggle-layer-mid').onchange = (e) => {
+                mid.style.opacity = e.target.checked ? '1' : '0';
+            };
+            document.getElementById('toggle-layer-fg').onchange = (e) => {
+                fg.style.opacity = e.target.checked ? '1' : '0';
+            };
+        }
+
+        function resetStage() {
+            const bg = document.getElementById('stage-bg');
+            const mid = document.getElementById('stage-mid');
+            const fg = document.getElementById('stage-fg');
+            bg.style.transform = 'translate3d(0, 0, 0)';
+            mid.style.transform = 'translate3d(0, 0, 0)';
+            fg.style.transform = 'translate3d(0, 0, 0)';
+            document.getElementById('readout-x').textContent = '0px';
+            document.getElementById('readout-y').textContent = '0px';
+        }
+
+        function toggleParallaxMode(mode) {
+            parallaxMode = mode;
+            const mouseBtn = document.getElementById('mode-mouse-btn');
+            const autoBtn = document.getElementById('mode-auto-btn');
+            if (mode === 'mouse') {
+                stopAutoLoop();
+                resetStage();
+                mouseBtn.className = 'px-3 py-2 text-xs font-medium rounded-lg bg-emerald-500 text-slate-950 font-bold shadow';
+                autoBtn.className = 'px-3 py-2 text-xs font-medium rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700';
+            } else {
+                startAutoLoop();
+                autoBtn.className = 'px-3 py-2 text-xs font-medium rounded-lg bg-emerald-500 text-slate-950 font-bold shadow';
+                mouseBtn.className = 'px-3 py-2 text-xs font-medium rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700';
+            }
+        }
+
+        function startAutoLoop() {
+            stopAutoLoop();
+            let t = 0;
+            const bg = document.getElementById('stage-bg');
+            const mid = document.getElementById('stage-mid');
+            const fg = document.getElementById('stage-fg');
+            const sliderX = document.getElementById('slider-amp-x');
+            const sliderY = document.getElementById('slider-amp-y');
+
+            autoLoopTimer = setInterval(() => {
+                t += 0.04;
+                const ampX = parseFloat(sliderX.value);
+                const ampY = parseFloat(sliderY.value);
+
+                const bgX = -Math.sin(t) * (ampX * 0.4);
+                const bgY = -Math.cos(t) * (ampY * 0.4);
+
+                const midX = Math.sin(t) * (ampX * 0.6);
+                const midY = Math.cos(t) * (ampY * 0.6);
+
+                const fgX = Math.sin(t) * (ampX * 1.5);
+                const fgY = Math.cos(t) * (ampY * 1.5);
+
+                bg.style.transform = `translate3d(${bgX}px, ${bgY}px, 0)`;
+                mid.style.transform = `translate3d(${midX}px, ${midY}px, 0)`;
+                fg.style.transform = `translate3d(${fgX}px, ${fgY}px, 0)`;
+            }, 30);
+        }
+
+        function stopAutoLoop() {
+            if (autoLoopTimer) {
+                clearInterval(autoLoopTimer);
+                autoLoopTimer = null;
+            }
+        }
+
+        // Custom Render Form
+        async function handleCustomRender(e) {
+            e.preventDefault();
+            const btn = document.getElementById('render-btn');
+            const placeholder = document.getElementById('render-placeholder');
+            const loading = document.getElementById('render-loading');
+            const output = document.getElementById('render-output');
+
+            placeholder.classList.add('hidden');
+            output.classList.add('hidden');
+            loading.classList.remove('hidden');
+            btn.disabled = true;
+
+            const formData = new FormData();
+            formData.append('image_id', activeImageId);
+            formData.append('bg_x', document.getElementById('form-bg-x').value);
+            formData.append('bg_y', document.getElementById('form-bg-y').value);
+            formData.append('subj_x', document.getElementById('form-subj-x').value);
+            formData.append('subj_y', document.getElementById('form-subj-y').value);
+            formData.append('breathing', document.getElementById('form-breathing').value);
+            formData.append('duration', document.getElementById('form-duration').value);
+
+            try {
+                const res = await fetch('/api/render_custom', {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await res.json();
+                if (data.status === 'success') {
+                    loading.classList.add('hidden');
+                    output.classList.remove('hidden');
+                    const player = document.getElementById('custom-video-player');
+                    player.src = data.mp4;
+                    document.getElementById('download-mp4').href = data.mp4;
+                    document.getElementById('download-gif').href = data.gif;
+                }
+            } catch (err) {
+                alert("Rendering failed: " + err);
+                loading.classList.add('hidden');
+                placeholder.classList.remove('hidden');
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        window.onload = init;
+    </script>
+</body>
+</html>

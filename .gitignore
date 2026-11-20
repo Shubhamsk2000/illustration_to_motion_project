@@ -1,0 +1,12 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+
+# Model weights (downloaded, large)
+*.pt
+
+# Rendered media (regenerate with the scripts)
+*.mp4
+*.gif
