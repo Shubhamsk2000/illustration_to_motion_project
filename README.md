@@ -35,6 +35,12 @@ How it works: the recording is transcribed with faster-whisper on CPU and matche
 every image appears just before you start its paragraph. Scenes crossfade into each other. Each scene is cached,
 so after changing one scene's look in `episode.yaml` only that scene and its neighbours are re-rendered.
 
+Each scene's look is picked from its words: the `> Image:` note, or the narration if there is no note
+(fire/torch/candle/lantern -> campfire, rain/storm -> storm, snow -> winter, battle/siege -> battle,
+fog/mist/dawn -> misty, sun/sunset -> sunlit, close-up/face -> portrait, otherwise the default).
+`plan` shows the suggestion as `auto_look` for every scene; set `preset:` to choose yourself, or
+`auto_look: false` in the settings to turn it off.
+
 `episode.yaml` holds the settings (fps, size, crossfade length, default look, music volume, voice clean-up on/off,
 an `image_style` added to every prompt in the shot list) and an optional look per scene, e.g.:
 
@@ -67,11 +73,18 @@ are several times faster. Episodes live in `episodes/`, which is not committed t
 ```
 
 - **Moves:** `push_in`, `pull_out`, `pan_left`, `pan_right`, `tilt_up`, `tilt_down`, `static`; loops: `drift`, `breathe`.
-- **Atmosphere:** `dust`, `embers`, `fireflies`, `snow`, `rain`.
-- **Presets:** `documentary`, `portrait`, `epic`, `calm`, `campfire`, `winter`, `storm`, `magic_forest`.
+- **Atmosphere (particles):** `dust`, `embers`, `fireflies`, `snow`, `rain`.
+- **Mist:** `fog` (drifts behind the characters), `smoke` (rises over everything).
+- **Glow:** `rays` (light shafts from the brightest spot), `firelight` (flickering warm light around the
+  brightest flame; flickers the whole picture if no flame is found).
+- **Presets:** `documentary`, `portrait`, `epic`, `calm`, `campfire`, `winter`, `storm`, `magic_forest`,
+  `misty`, `sunlit`, `battle`.
 - **Fit:** 16:9 (or close) images fill the frame; portrait images are shown whole on a blurred backdrop
   (`--fit crop|blur` to force one). Generate images at 16:9, 1920 px wide or more, for the best result.
-- Tuning flags: `--strength`, `--depth`, `--breathing`, `--light`, `--fps`, `--size`. See `motion-batch -h`.
+- Tuning flags: `--strength`, `--depth`, `--breathing`, `--mist`, `--glow`, `--light`, `--fps`, `--size`.
+  See `motion-batch -h`.
+- The background behind characters is filled in by the LaMa model (downloaded once, ~200 MB, ~5 s per image,
+  cached). Without it (offline) a basic fill is used.
 - Depth maps and layer splits are cached in `output/`, so re-rendering an image is fast.
 
 The old experimental approaches are still available with `--approach 1..4`.
@@ -94,6 +107,8 @@ src/motion_studio/
   camera.py          documentary camera moves and loops
   layers.py          splits an image into background / subject / foreground planes
   atmosphere.py      particles: dust, embers, fireflies, snow, rain
+  effects.py         mist (fog, smoke) and light (rays, firelight)
+  models.py          downloaded models (LaMa inpainting), pinned to a tested revision
   depth.py           Depth-Anything-V2 depth with caching
   encode.py          FFmpeg writer
   engine.py          older warp-based preset engine (kept for reference)

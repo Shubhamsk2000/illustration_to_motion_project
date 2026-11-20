@@ -90,8 +90,8 @@ def test_render_writes_video(tmp_path):
     assert stats["frames"] == 12
 
 
-def test_golden_frame():
-    """Guards the look of a real sample. Set UPDATE_GOLDEN=1 to accept an intended change."""
+def test_golden_frame(with_lama):
+    """Guards the look of a real sample (real pipeline, with LaMa). Set UPDATE_GOLDEN=1 to accept a change."""
     r = SceneRenderer(sample_image("warriors"), spec_from_preset("documentary"), size=(480, 270), fps=12, duration=2)
     frame = r.frame_at(0.5)
     if os.environ.get("UPDATE_GOLDEN") or not GOLDEN.exists():

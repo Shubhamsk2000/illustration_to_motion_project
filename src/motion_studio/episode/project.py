@@ -17,11 +17,13 @@ from pathlib import Path
 
 import yaml
 
+from motion_studio.episode.looks import suggest_look
 from motion_studio.episode.script import SCRIPT_TEMPLATE, WORDS_PER_MINUTE, Script, parse_script
 
 AUDIO_EXTS = (".wav", ".mp3", ".m4a", ".flac", ".aac", ".ogg")
 IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".webp")
-SCENE_OVERRIDE_KEYS = ("preset", "move", "strength", "depth", "breathing", "atmosphere", "light", "fit")
+SCENE_OVERRIDE_KEYS = ("preset", "move", "strength", "depth", "breathing", "atmosphere", "mist", "glow", "light",
+                       "fit")
 
 
 @dataclass
@@ -30,6 +32,7 @@ class Settings:
     size: str = "1920x1080"
     transition: float = 0.6         # crossfade between scenes, seconds
     default_preset: str = "documentary"
+    auto_look: bool = True          # pick each scene's look from its words (fire -> campfire, fog -> misty ...)
     enhance_voice: bool = True      # set false if you already cleaned the voice in another tool
     music: str | None = None        # file in the folder; music.* is picked up automatically
     music_volume: float = 0.15      # music level under the voice (it also ducks while you speak)
@@ -121,16 +124,22 @@ class Episode:
 
     def write_yaml(self, settings: Settings, overrides: dict[str, dict], script: Script | None = None) -> None:
         scenes = []
+        auto_on = settings.auto_look
         for s in (script.scenes if script else []):
             entry = {"id": s.id, "says": _short(s.text)}
+            look, word = suggest_look(s.text, s.image_note) if auto_on else (None, None)
+            if look:
+                entry["auto_look"] = f"{look} (from '{word}')"
             entry.update(overrides.get(s.id, {}))
             scenes.append(entry)
         header = (
             "# Episode settings and per-scene looks. Edit freely; `motion-episode plan` keeps your changes.\n"
             "# Per scene you can set: preset, move, strength, depth, breathing, atmosphere, light, fit\n"
-            "#   presets: documentary portrait epic calm campfire winter storm magic_forest\n"
+            "#   presets: documentary portrait epic calm campfire winter storm magic_forest misty sunlit battle\n"
             "#   moves: push_in pull_out pan_left pan_right tilt_up tilt_down static\n"
             "#   atmosphere: none dust embers fireflies snow rain\n"
+            "#   mist: none fog smoke      glow: none rays firelight\n"
+            "# auto_look is only information: what the scene's words suggest. Set preset: to choose yourself.\n"
         )
         body = yaml.safe_dump({"settings": asdict(settings), "scenes": scenes}, sort_keys=False,
                               allow_unicode=True, width=120)
@@ -158,7 +167,16 @@ class Episode:
             "missing_images": [s.id for s in script.scenes if int(s.id) not in images],
             "long_scenes": long, "short_scenes": short,
             "dropped_overrides": sorted(set(old) - {s.id for s in script.scenes}),
+            "looks": self._look_summary(script, settings, old),
         }
+
+    def _look_summary(self, script: Script, settings: Settings, overrides: dict) -> dict[str, int]:
+        counts: dict[str, int] = {}
+        for s in script.scenes:
+            auto = suggest_look(s.text, s.image_note)[0] if settings.auto_look else None
+            look = overrides.get(s.id, {}).get("preset") or auto or settings.default_preset
+            counts[look] = counts.get(look, 0) + 1
+        return dict(sorted(counts.items(), key=lambda kv: -kv[1]))
 
     def write_shotlist(self, script: Script, settings: Settings) -> None:
         style = settings.image_style.strip()

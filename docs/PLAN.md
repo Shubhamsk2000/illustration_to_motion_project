@@ -56,14 +56,25 @@ Workflow: write `script.md` → `plan` (shot list for image generation) → reco
 Ideas for later: a stronger AI voice enhancer (e.g. DeepFilterNet) as an option; burned-in subtitles for Shorts;
 rendering scenes on both CPU cores in parallel.
 
-## Phase 3: better separation and history-scene effects
+## Phase 3: better separation and history-scene effects — done
 
-1. Proper subject cut-outs with a background-removal / matting model instead of depth thresholds.
-2. Better fill behind subjects with a learned inpainting model (LaMa, runs on CPU) so parallax shows no smears.
-3. Text-prompted region masks ("sky", "torch flame", "river") so effects land only where they belong.
-4. Effect library for history scenes: fire/torch/candle flicker, smoke, drifting fog, rain, snow, embers,
-   dust in light beams, cloth/flag sway, water shimmer.
-5. Auto-suggest a motion + effect preset per image from its content (night camp → embers + flicker).
+What was tried, measured on the four samples, and kept or dropped:
+
+| Idea | Result | Decision |
+|---|---|---|
+| LaMa inpainting (Apache-2.0, ONNX) for the fill behind subjects | Walls, hills and grass continue behind subjects instead of a smear; ~5 s per image, cached | **Kept** |
+| anime-seg character matting (Apache-2.0) | Found 0-4% of the image on 3 of 4 painterly samples | Dropped |
+| BiRefNet-lite matting (MIT) | Needs code from the model repo to run; blocked by this machine's permission rules | Not tested |
+| Guided-filter edge refinement | Small gain on one sample, bled edges on dark ones | Dropped |
+| CLIPSeg text-prompted regions (Apache-2.0) | Good for sky; false "fog"/"sun" on dark green scenes; 600 MB, 6 s per image | Dropped in favour of script words |
+| Look chosen from the script's words | Matches what you described, free, easy to override | **Kept** |
+
+New: `fog` and `smoke` mist, `rays` and `firelight` glow, presets `misty`, `sunlit`, `battle`; `campfire` now
+lights the area around the flame. Effects cost a few ms per frame.
+
+Still open: the subject's own soft outline and depth-split mistakes (e.g. a sword handle treated as background).
+A real matting model would fix both; BiRefNet-lite is the candidate if running its repository code is allowed.
+Untested on real fire/water/snow images (none in the samples yet).
 
 ## Phase 4: the studio web app as an episode editor
 

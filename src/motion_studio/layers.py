@@ -20,13 +20,21 @@ class Layers:
 
 
 def _fill_behind(img: np.ndarray, mask: np.ndarray) -> np.ndarray:
-    """Fill the masked area (uint8 0/255) from its surroundings."""
+    """Fill the masked area (uint8 0/255) with plausible background.
+
+    Uses the LaMa model (textures, horizons and walls continue behind the subject); falls back to classic
+    Telea inpainting (smooth smear) when the model can't be loaded.
+    """
+    from motion_studio.models import lama_inpaint
+
     h, w = img.shape[:2]
-    s = min(1.0, _INPAINT_MAX_SIDE / max(h, w))
-    small = cv2.resize(img, (int(w * s), int(h * s)), interpolation=cv2.INTER_AREA)
-    small_mask = cv2.resize(mask, (small.shape[1], small.shape[0]), interpolation=cv2.INTER_NEAREST)
-    filled = cv2.inpaint(small, small_mask, max(3, int(9 * s)), cv2.INPAINT_TELEA)
-    filled = cv2.resize(filled, (w, h), interpolation=cv2.INTER_CUBIC)
+    filled = lama_inpaint(img, mask)
+    if filled is None:
+        s = min(1.0, _INPAINT_MAX_SIDE / max(h, w))
+        small = cv2.resize(img, (int(w * s), int(h * s)), interpolation=cv2.INTER_AREA)
+        small_mask = cv2.resize(mask, (small.shape[1], small.shape[0]), interpolation=cv2.INTER_NEAREST)
+        filled = cv2.inpaint(small, small_mask, max(3, int(9 * s)), cv2.INPAINT_TELEA)
+        filled = cv2.resize(filled, (w, h), interpolation=cv2.INTER_CUBIC)
     soft = cv2.GaussianBlur(mask, (0, 0), 3).astype(np.float32)[:, :, None] / 255.0
     return (img * (1.0 - soft) + filled * soft).astype(np.uint8)
 

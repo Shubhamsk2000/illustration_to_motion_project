@@ -21,7 +21,7 @@ from motion_studio.depth import file_hash
 from motion_studio.encode import VideoWriter
 from motion_studio.scene import SceneRenderer, SceneSpec
 
-ENGINE_VERSION = "1"
+ENGINE_VERSION = "2"
 
 
 @dataclass

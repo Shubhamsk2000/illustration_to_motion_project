@@ -32,6 +32,8 @@ def cmd_plan(args):
     if 0 < len(r["chapters"]) < 3:
         print("  ! YouTube needs at least 3 chapters to show them")
     print(f"  images: {r['images_found']}/{r['scenes']} found")
+    print("  looks: " + ", ".join(f"{k} x{v}" for k, v in r["looks"].items())
+          + "  (from the scene words; change any scene in episode.yaml)")
     if r["long_scenes"]:
         print(f"  ! long paragraphs (over 40 words, one image for 16 s+): {', '.join(r['long_scenes'])}"
               " - consider splitting them")
