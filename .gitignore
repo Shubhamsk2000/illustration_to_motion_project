@@ -16,3 +16,6 @@ output/
 scratch/
 models/
 .pytest_cache/
+
+# Your episodes (scripts, recordings, images, renders) stay local
+episodes/

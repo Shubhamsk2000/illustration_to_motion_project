@@ -34,14 +34,27 @@
 Known limits, for Phase 3: the fill behind subjects is soft, so strong pans show a smudge next to characters;
 small images upscaled to 1080p look soft.
 
-## Phase 2: the episode pipeline (biggest win for the channel)
+## Phase 2: the episode pipeline — done
 
-1. An episode folder: `episodes/roman-soldier/{scenes/*.png, narration.wav, script.md, episode.yaml}`.
-2. **Auto timing:** transcribe the narration on CPU (faster-whisper) and line it up with the script so each
-   image gets its start/end time. Manual overrides in `episode.yaml` (per-scene motion, effect, duration).
-3. **Assembly:** scene clips + crossfades + your voice + optional music bed ducked under the voice, loudness
-   normalised for YouTube (-14 LUFS), plus an `.srt` subtitle file and chapter timestamps.
-4. One command: `motion-episode build episodes/roman-soldier` → `final.mp4`, `subtitles.srt`, `chapters.txt`.
+Workflow: write `script.md` → `plan` (shot list for image generation) → record narration → make images →
+`build --draft` → `build`.
+
+- **Script format:** one paragraph per image, `##` chapters, `> Image:` notes for the shot list.
+- **Voice clean-up** (FFmpeg): rumble cut, non-local-means denoise (removed ~19 dB of hiss in tests vs ~4 dB for
+  the first choice), EQ, de-esser, compressor, limiter. Can be switched off if you clean the voice elsewhere.
+- **Timing:** faster-whisper `base` on CPU (~7 s per minute of audio) + word alignment to the script: 96-97% of
+  words matched on a test narration; unmatched words (names, numbers) are interpolated. Cuts land 0.25 s before
+  each paragraph, with a 1.5 s minimum per image.
+- **Video:** one cached segment per scene; crossfades are split across neighbouring segments so they join
+  seamlessly; only changed scenes are re-rendered. Missing images become placeholder cards in drafts.
+- **Audio:** music loops, fades in/out and ducks ~10 dB under the voice; two-pass loudness to -14 LUFS.
+- **Exports:** video, `subtitles.srt` (script spelling), `chapters.txt` (checked against YouTube's rules),
+  `timeline.json`.
+- Measured: 56 s test episode at 1080p in 147 s from scratch (≈2.6 s per second of video → a 15-minute episode
+  in ~35-40 min); after changing one scene, 50 s.
+
+Ideas for later: a stronger AI voice enhancer (e.g. DeepFilterNet) as an option; burned-in subtitles for Shorts;
+rendering scenes on both CPU cores in parallel.
 
 ## Phase 3: better separation and history-scene effects
 
@@ -66,7 +79,5 @@ single scene, build the episode, download. Replaces the current comparison galle
 
 ## Open questions
 
-- Typical episode length and how many images per minute?
+- Answered: 10-15 minute episodes; script first, then voice, then images from the script; music maybe.
 - Will images be generated at 16:9 from now on?
-- Is there always a written script for each recording (makes auto timing much more accurate)?
-- Mostly one-way documentary moves, or keep loops as an option?

@@ -14,7 +14,40 @@ python3 -m venv .venv
 .venv/bin/pip install -e .
 ```
 
-## Use
+## Make an episode
+
+```bash
+.venv/bin/motion-episode new episodes/roman-soldier --title "A Day in the Life of a Roman Soldier"
+#  1. write episodes/roman-soldier/script.md   (one paragraph = one image, "## Heading" = chapter,
+#                                               "> Image: ..." = what to draw, not narrated)
+.venv/bin/motion-episode plan episodes/roman-soldier    # -> shotlist.md: the image to make for each scene
+#  2. record narration.wav following the script, put it in the folder
+#  3. generate images/001.png, 002.png ... (16:9) from shotlist.md; optionally add music.mp3
+.venv/bin/motion-episode voice episodes/roman-soldier   # optional: listen to the cleaned-up voice
+.venv/bin/motion-episode build episodes/roman-soldier --draft   # fast preview, cards for missing images
+.venv/bin/motion-episode build episodes/roman-soldier           # final 1080p
+```
+
+`build` writes to `export/`: the video (voice cleaned up, music ducked under the voice, -14 LUFS like YouTube
+expects), `subtitles.srt` (spelled exactly as in your script) and `chapters.txt` (paste into the description).
+
+How it works: the recording is transcribed with faster-whisper on CPU and matched word by word to the script, so
+every image appears just before you start its paragraph. Scenes crossfade into each other. Each scene is cached,
+so after changing one scene's look in `episode.yaml` only that scene and its neighbours are re-rendered.
+
+`episode.yaml` holds the settings (fps, size, crossfade length, default look, music volume, voice clean-up on/off,
+an `image_style` added to every prompt in the shot list) and an optional look per scene, e.g.:
+
+```yaml
+- id: '012'
+  preset: campfire
+  move: pull_out
+```
+
+Timing on this machine (2 CPUs): a 15-minute episode takes roughly 35-40 minutes to build the first time; drafts
+are several times faster. Episodes live in `episodes/`, which is not committed to git.
+
+## Single clips
 
 ```bash
 # Every image in a folder -> one 1920x1080 clip each (camera move varies scene to scene)
@@ -67,6 +100,7 @@ src/motion_studio/
   approaches/        the four original experiments (a1..a4)
   batch.py           motion-batch CLI
   web_layers.py      exports bg/mid/fg layers for the web playground
+  episode/           motion-episode: script, voice, timing, subtitles, timeline, mix
   web/               FastAPI app (motion-studio) + static UI
   paths.py           every project path in one place
 assets/
