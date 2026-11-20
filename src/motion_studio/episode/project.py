@@ -113,6 +113,84 @@ class Episode:
                 found[n] = p
         return found
 
+    # ---- edits (used by the web studio) -------------------------------------------------------------------
+
+    def set_scene_look(self, scene_id: str, values: dict) -> dict:
+        """Replace one scene's look overrides; empty/None values mean 'use the automatic choice'."""
+        script = self.script()
+        sid = f"{int(scene_id):03d}"
+        if sid not in {s.id for s in script.scenes}:
+            raise KeyError(f"No scene {scene_id}")
+        clean = validate_look({k: v for k, v in values.items() if v not in (None, "")})
+        overrides = self.overrides()
+        if clean:
+            overrides[sid] = clean
+        else:
+            overrides.pop(sid, None)
+        self.write_yaml(self.settings(), overrides, script)
+        return clean
+
+    def update_settings(self, values: dict) -> Settings:
+        current = asdict(self.settings())
+        for k, v in values.items():
+            if k not in current:
+                raise ValueError(f"Unknown setting: {k}")
+            default = getattr(Settings, k, None)
+            if v is None or v == "":
+                current[k] = None if k == "music" else default
+            elif isinstance(default, bool):
+                current[k] = v if isinstance(v, bool) else str(v).lower() in ("1", "true", "yes", "on")
+            elif isinstance(default, int):
+                current[k] = int(v)
+            elif isinstance(default, float):
+                current[k] = float(v)
+            else:
+                current[k] = str(v)
+        settings = Settings(**current)
+        from motion_studio.scene import PRESETS
+
+        if settings.default_preset not in PRESETS:
+            raise ValueError(f"Unknown preset: {settings.default_preset}")
+        if not re.fullmatch(r"\d{2,4}x\d{2,4}", settings.size):
+            raise ValueError("size must look like 1920x1080")
+        script = self.script() if self.script_path.exists() else None
+        self.write_yaml(settings, self.overrides(), script)
+        if script:
+            self.write_shotlist(script, settings)
+        return settings
+
+    def save_image(self, scene_id: str, data: bytes, ext: str) -> Path:
+        """Store the image for a scene as images/<id><ext>, replacing any earlier image for that scene."""
+        import cv2
+        import numpy as np
+
+        ext = ext.lower()
+        if ext not in IMAGE_EXTS:
+            raise ValueError(f"Images must be one of {', '.join(IMAGE_EXTS)}")
+        if cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR) is None:
+            raise ValueError("That file is not a readable image")
+        n = int(scene_id)
+        self.images_dir.mkdir(parents=True, exist_ok=True)
+        old = self.images().get(n)
+        if old is not None:
+            old.unlink()
+        path = self.images_dir / f"{n:03d}{ext}"
+        path.write_bytes(data)
+        return path
+
+    def save_audio(self, kind: str, data: bytes, ext: str) -> Path:
+        """Store narration.<ext> or music.<ext>, replacing the previous file of that kind."""
+        if kind not in ("narration", "music"):
+            raise ValueError("kind must be narration or music")
+        ext = ext.lower()
+        if ext not in AUDIO_EXTS:
+            raise ValueError(f"Audio must be one of {', '.join(AUDIO_EXTS)}")
+        for e in AUDIO_EXTS:
+            (self.dir / f"{kind}{e}").unlink(missing_ok=True)
+        path = self.dir / f"{kind}{ext}"
+        path.write_bytes(data)
+        return path
+
     # ---- commands ----------------------------------------------------------------------------------------
 
     def create(self, title: str) -> None:
@@ -194,6 +272,38 @@ class Episode:
             lines += [f"### {s.id}  →  images/{s.id}.png", "", f"Narration: {s.text}", "",
                       f"Prompt: {prompt}, 16:9", ""]
         (self.dir / "shotlist.md").write_text("\n".join(lines), encoding="utf-8")
+
+
+def look_choices() -> dict[str, list]:
+    from motion_studio.atmosphere import KIND_NAMES
+    from motion_studio.camera import ALL_MOVES
+    from motion_studio.effects import GLOW_NAMES, MIST_NAMES
+    from motion_studio.scene import FITS, PRESETS
+
+    return {"preset": list(PRESETS), "move": ALL_MOVES, "atmosphere": KIND_NAMES, "mist": MIST_NAMES,
+            "glow": GLOW_NAMES, "fit": FITS}
+
+
+NUMERIC_LOOK_LIMITS = {"strength": (0.0, 3.0), "depth": (0.0, 3.0), "breathing": (0.0, 0.03), "light": (0.0, 0.3)}
+
+
+def validate_look(values: dict) -> dict:
+    choices = look_choices()
+    out = {}
+    for k, v in values.items():
+        if k in choices:
+            if v not in choices[k]:
+                raise ValueError(f"{k} must be one of: {', '.join(choices[k])}")
+            out[k] = v
+        elif k in NUMERIC_LOOK_LIMITS:
+            lo, hi = NUMERIC_LOOK_LIMITS[k]
+            v = float(v)
+            if not lo <= v <= hi:
+                raise ValueError(f"{k} must be between {lo} and {hi}")
+            out[k] = v
+        else:
+            raise ValueError(f"Unknown look setting: {k}")
+    return out
 
 
 def _short(text: str, n: int = 70) -> str:

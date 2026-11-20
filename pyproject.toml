@@ -26,7 +26,6 @@ dev = ["pytest"]
 [project.scripts]
 motion-batch = "motion_studio.batch:main"
 motion-studio = "motion_studio.web.app:main"
-motion-web-layers = "motion_studio.web_layers:main"
 motion-episode = "motion_studio.episode.cli:main"
 
 [tool.setuptools.packages.find]

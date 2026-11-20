@@ -49,8 +49,40 @@ def scene_spec(index: int, default_preset: str, override: dict, auto_preset: str
     return replace(spec, loop=False)
 
 
-def build(folder, draft: bool = False, allow_missing: bool = False) -> dict:
+def scene_specs(ep: Episode, script=None, settings=None, overrides=None) -> list[dict]:
+    """Every scene with its suggested look and the look that will actually be rendered."""
+    script = script or ep.script()
+    settings = settings or ep.settings()
+    overrides = ep.overrides() if overrides is None else overrides
+    out = []
+    for i, s in enumerate(script.scenes):
+        auto, word = suggest_look(s.text, s.image_note) if settings.auto_look else (None, None)
+        override = overrides.get(s.id, {})
+        out.append({"scene": s, "auto": auto, "auto_word": word, "override": override,
+                    "spec": scene_spec(i, settings.default_preset, override, auto)})
+    return out
+
+
+# Share of the whole build each stage takes, for progress bars.
+_STAGES = {"voice": (0.0, 0.05), "transcribe": (0.05, 0.15), "render": (0.15, 0.92), "mix": (0.92, 1.0)}
+
+
+def placeholder_image(ep: Episode, scene) -> Path:
+    img = ep.build_dir / "placeholders" / f"{scene.id}.png"
+    if not img.exists():
+        make_placeholder(img, scene.id, scene.text)
+    return img
+
+
+def build(folder, draft: bool = False, allow_missing: bool = False, progress=None) -> dict:
+    """progress(stage, fraction_of_whole_build, detail) is called as the build advances."""
     t0 = time.time()
+
+    def report(stage, within=0.0, detail=""):
+        if progress:
+            a, b = _STAGES[stage]
+            progress(stage, a + (b - a) * within, detail)
+
     ep = Episode(folder)
     script, settings, overrides = ep.script(), ep.settings(), ep.overrides()
     if not script.scenes:
@@ -67,9 +99,11 @@ def build(folder, draft: bool = False, allow_missing: bool = False) -> dict:
             "Add them to images/, or use --draft / --allow-missing to render placeholder cards.")
 
     # 1. Voice and timing
+    report("voice", 0, "cleaning up the narration")
     voice = clean_voice(ep, settings.enhance_voice)
     voice_seconds = audio.duration(voice)
     all_words = [w for s in script.scenes for w in s.words]
+    report("transcribe", 0, "matching the recording to the script")
     asr = transcribe(voice, ep.build_dir, settings.whisper_model, settings.language)
     words, match = align_words(all_words, asr, voice_seconds)
     total = voice_seconds + settings.end_hold
@@ -78,24 +112,24 @@ def build(folder, draft: bool = False, allow_missing: bool = False) -> dict:
     # 2. Shots
     size = DRAFT_SIZE if draft else tuple(int(v) for v in settings.size.lower().split("x"))
     shots = []
-    for i, (s, tm) in enumerate(zip(script.scenes, timings)):
+    for sc, tm in zip(scene_specs(ep, script, settings, overrides), timings):
+        s = sc["scene"]
         img = images.get(int(s.id))
         placeholder = img is None
         if placeholder:
-            img = ep.build_dir / "placeholders" / f"{s.id}.png"
-            if not img.exists():
-                make_placeholder(img, s.id, s.text)
-        auto = suggest_look(s.text, s.image_note)[0] if settings.auto_look else None
-        shots.append(Shot(s.id, img, scene_spec(i, settings.default_preset, overrides.get(s.id, {}), auto),
-                          tm.start, tm.end, placeholder))
+            img = placeholder_image(ep, s)
+        shots.append(Shot(s.id, img, sc["spec"], tm.start, tm.end, placeholder))
 
     # 3. Video
     suffix = "_draft" if draft else ""
     video = ep.build_dir / f"video{suffix}.mp4"
+    report("render", 0, f"scene 0 of {len(shots)}")
     stats = render_timeline(shots, video, ep.build_dir, size=size, fps=settings.fps,
-                            transition=settings.transition, draft=draft)
+                            transition=settings.transition, draft=draft,
+                            on_progress=lambda i, n: report("render", i / n, f"scene {i} of {n}"))
 
     # 4. Audio mix + final file
+    report("mix", 0, "mixing voice and music")
     music = ep.music(settings)
     mix_wav = ep.build_dir / "mix.wav"
     audio.mix(voice, mix_wav, total, music, settings.music_volume)
@@ -113,6 +147,7 @@ def build(folder, draft: bool = False, allow_missing: bool = False) -> dict:
         {"id": sh.id, "start": sh.start, "end": sh.end, "image": str(sh.image), "placeholder": sh.placeholder,
          "spec": asdict(sh.spec)} for sh in shots], indent=2))
 
+    report("mix", 1, "done")
     return {
         "final": str(final), "seconds": round(total, 1), "scenes": len(shots), "missing_images": missing,
         "script_match": round(match, 3), "subtitle_cues": n_cues, "chapters": len(chs),

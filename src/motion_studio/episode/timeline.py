@@ -49,11 +49,6 @@ def make_placeholder(path: Path, shot_id: str, text: str, size=(1920, 1080)) -> 
     cv2.imwrite(str(path), img)
 
 
-def _flat_depth(path: Path) -> np.ndarray:
-    h, w = cv2.imread(str(path)).shape[:2]
-    return np.repeat(np.linspace(0.2, 0.5, h, dtype=np.float32)[:, None], w, axis=1)
-
-
 class _Renderers:
     """Keeps only the renderers needed for the current shot and its neighbours."""
 
@@ -71,8 +66,8 @@ class _Renderers:
         if i not in self.live:
             s = self.shots[i]
             m0, m1 = self.window(i)
-            depth = _flat_depth(s.image) if s.placeholder else None
-            self.live[i] = SceneRenderer(s.image, s.spec, size=self.size, fps=self.fps, duration=m1 - m0, depth=depth)
+            self.live[i] = SceneRenderer(s.image, s.spec, size=self.size, fps=self.fps, duration=m1 - m0,
+                                         flat=s.placeholder)
         for k in [k for k in self.live if abs(k - i) > 1]:
             del self.live[k]
         return self.live[i]
@@ -92,7 +87,7 @@ def _segment_key(shots, i, size, fps, f, encoder) -> str:
 
 
 def render_timeline(shots: list[Shot], out_video: Path, build_dir: Path, size=(1920, 1080), fps: int = 24,
-                    transition: float = 0.6, draft: bool = False) -> dict:
+                    transition: float = 0.6, draft: bool = False, on_progress=None) -> dict:
     seg_dir = build_dir / "segments"
     seg_dir.mkdir(parents=True, exist_ok=True)
     f = max(0.0, min(transition, min(s.end - s.start for s in shots)))
@@ -110,6 +105,8 @@ def render_timeline(shots: list[Shot], out_video: Path, build_dir: Path, size=(1
                 old.unlink()
         if path.exists():
             reused += 1
+            if on_progress:
+                on_progress(i + 1, len(shots))
             continue
 
         g0, g1 = round(s.start * fps), round(s.end * fps)
@@ -126,6 +123,8 @@ def render_timeline(shots: list[Shot], out_video: Path, build_dir: Path, size=(1
                 vw.write(frame)
         rendered += 1
         print(f"\r[render] scene {s.id} ({i + 1}/{len(shots)})", end="", flush=True)
+        if on_progress:
+            on_progress(i + 1, len(shots))
     print()
 
     listing = build_dir / "segments.txt"

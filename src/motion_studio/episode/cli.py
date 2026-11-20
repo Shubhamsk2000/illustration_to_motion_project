@@ -8,6 +8,8 @@
 """
 
 import argparse
+import json
+import os
 import sys
 
 from motion_studio.episode import audio
@@ -53,8 +55,25 @@ def cmd_voice(args):
     print(f"Cleaned narration: {dst} ({audio.duration(dst):.1f}s)")
 
 
+def _progress_writer(path):
+    """Writes {stage, progress, detail} to a JSON file (read by the web app's progress bar)."""
+    if not path:
+        return None
+
+    def write(stage, fraction, detail):
+        tmp = f"{path}.tmp"
+        with open(tmp, "w") as f:
+            json.dump({"stage": stage, "progress": round(fraction, 4), "detail": detail}, f)
+        os.replace(tmp, path)
+    return write
+
+
 def cmd_build(args):
-    r = build(args.folder, draft=args.draft, allow_missing=args.allow_missing)
+    r = build(args.folder, draft=args.draft, allow_missing=args.allow_missing,
+              progress=_progress_writer(args.progress_file))
+    if args.progress_file:
+        with open(args.progress_file + ".result.json", "w") as f:
+            json.dump(r, f)
     print(f"\nDone in {r['build_seconds']}s -> {r['final']}")
     print(f"  {r['seconds']}s video, {r['scenes']} scenes ({r['segments_rendered']} rendered, "
           f"{r['segments_reused']} reused from the last build)")
@@ -88,6 +107,7 @@ def main():
     p.add_argument("folder")
     p.add_argument("--draft", action="store_true", help="fast 960x540 preview; missing images become cards")
     p.add_argument("--allow-missing", action="store_true", help="full quality, with cards for missing images")
+    p.add_argument("--progress-file", help=argparse.SUPPRESS)
     p.set_defaults(func=cmd_build)
     args = ap.parse_args()
     try:

@@ -14,7 +14,7 @@
   whatever length each narrated beat lasts.
 - Speed on this machine (2 CPUs, no GPU): ~3 s to render 1 s of video at 720×1080. A full 1920×1080 frame is
   ~2.7× larger, so a 10-minute episode would take over an hour today.
-- The layer-splitting code exists in three near-identical copies (a3, a4, web_layers). Subjects are found by
+- The layer-splitting code existed in three near-identical copies (a3, a4, web_layers). Subjects are found by
   thresholding depth, and the hole behind them is filled with OpenCV inpainting, which smears on big subjects.
 
 ## Phase 1: one engine that makes YouTube-ready scene clips — done
@@ -76,10 +76,21 @@ Still open: the subject's own soft outline and depth-split mistakes (e.g. a swor
 A real matting model would fix both; BiRefNet-lite is the candidate if running its repository code is allowed.
 Untested on real fire/water/snow images (none in the samples yet).
 
-## Phase 4: the studio web app as an episode editor
+## Phase 4: the studio web app as an episode editor — done
 
-Scene list with thumbnails and timings, pick motion/effects per scene, instant in-browser preview, re-render a
-single scene, build the episode, download. Replaces the current comparison gallery.
+`motion-studio` is now an episode editor (it replaces the old approach-comparison gallery):
+
+- Episode list with thumbnails and status; create an episode from a title.
+- Per episode: upload narration and music (and play them), script editor (Ctrl+S re-plans the scenes),
+  settings form, and a scene list grouped by chapter.
+- Each scene: thumbnail (drop or click to add/replace the image), narration, image note, and dropdowns for look,
+  camera, particles, mist, light and strength. Every dropdown says where its default comes from
+  ("Auto: campfire (lantern)", "From look: firelight"). Changes are saved to episode.yaml.
+- Preview: renders just that scene at 640x360 in ~2 s (title card) to ~5-15 s (first time for an image, LaMa),
+  seconds after that.
+- Builds run as a separate process (one at a time), with a progress bar by stage and scene, cancel (also stops
+  FFmpeg), and a result summary; the Output tab plays the video and offers the files and chapters to copy.
+- Files are only served from images/, export/ and preview folders of an episode, plus its narration/music.
 
 ## Later / optional
 

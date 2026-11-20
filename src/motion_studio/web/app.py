@@ -1,290 +1,274 @@
-"""
-FastAPI Server for Illustration Motion Studio & Review Gallery.
-Supports side-by-side comparison of all 4 approaches and live interactive 2D website parallax.
+"""Motion Studio web app: an editor for episodes (script, scenes, looks, previews, builds).
+
+Run with `motion-studio` and open http://127.0.0.1:8010
 """
 
+import hashlib
 import os
-import math
-import subprocess
+import re
+from dataclasses import asdict
+from pathlib import Path
+
 import cv2
-import numpy as np
-from fastapi import FastAPI, UploadFile, File, Form
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi.concurrency import run_in_threadpool
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 
-from motion_studio.paths import (
-    CUSTOM_RENDERS_DIR,
-    EXPERIMENTS_DIR,
-    SAMPLES_DIR,
-    WEB_STATIC_DIR,
-    sample_depth,
-    sample_image,
-)
+from motion_studio.episode import audio
+from motion_studio.episode.build import scene_specs
+from motion_studio.episode.preview import preview_scene, scene_duration
+from motion_studio.episode.project import Episode, Settings, look_choices
+from motion_studio.paths import EPISODES_DIR, WEB_STATIC_DIR
+from motion_studio.scene import PRESETS
+from motion_studio.web.jobs import JobManager
 
-app = FastAPI(title="Illustration Motion Studio")
+NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,60}$")
+AUDIO_RE = re.compile(r"^(narration|music)\.(wav|mp3|m4a|flac|aac|ogg)$")
+SERVABLE = ("images/", "export/", ".build/previews/", ".build/placeholders/", ".build/thumbs/")
+MAX_UPLOAD = 300 * 1024 * 1024
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+app = FastAPI(title="Motion Studio")
+jobs = JobManager()
 
-EXPERIMENTS_DIR.mkdir(parents=True, exist_ok=True)
-CUSTOM_RENDERS_DIR.mkdir(parents=True, exist_ok=True)
 
-app.mount("/experiments", StaticFiles(directory=EXPERIMENTS_DIR), name="experiments")
-app.mount("/art", StaticFiles(directory=SAMPLES_DIR), name="art")
+def episodes_root() -> Path:
+    """episodes/ in the project, or MOTION_STUDIO_EPISODES if set."""
+    return Path(os.environ.get("MOTION_STUDIO_EPISODES") or EPISODES_DIR)
+
+
+def episode(name: str, must_exist: bool = True) -> Episode:
+    if not NAME_RE.match(name):
+        raise HTTPException(400, "Episode names use lowercase letters, numbers, - and _")
+    ep = Episode(episodes_root() / name)
+    if must_exist and not ep.script_path.exists():
+        raise HTTPException(404, f"No episode '{name}'")
+    return ep
+
+
+def file_url(ep: Episode, path: Path) -> str:
+    rel = path.relative_to(ep.dir).as_posix()
+    return f"/files/{ep.dir.name}/{rel}?v={int(path.stat().st_mtime)}"
+
+
+def thumbnail(ep: Episode, image: Path) -> Path:
+    key = hashlib.sha1(f"{image.name}:{image.stat().st_mtime_ns}:{image.stat().st_size}".encode()).hexdigest()[:10]
+    out = ep.build_dir / "thumbs" / f"{image.stem}_{key}.jpg"
+    if not out.exists():
+        out.parent.mkdir(parents=True, exist_ok=True)
+        for old in out.parent.glob(f"{image.stem}_*.jpg"):
+            old.unlink()
+        img = cv2.imread(str(image))
+        h, w = img.shape[:2]
+        s = 360 / max(h, w)
+        cv2.imwrite(str(out), cv2.resize(img, (int(w * s), int(h * s)), interpolation=cv2.INTER_AREA),
+                    [cv2.IMWRITE_JPEG_QUALITY, 85])
+    return out
+
+
+def _errors(fn):
+    """Turn validation problems into readable 400 responses."""
+    try:
+        return fn()
+    except (ValueError, KeyError, FileNotFoundError, FileExistsError) as e:
+        raise HTTPException(400, str(e).strip("'")) from e
+
+
+# ---- episodes ----------------------------------------------------------------------------------------------
+
+@app.get("/api/options")
+def options():
+    return {"looks": look_choices(), "presets": PRESETS, "settings": asdict(Settings())}
+
+
+@app.get("/api/episodes")
+def list_episodes():
+    root = episodes_root()
+    out = []
+    for d in sorted(root.iterdir() if root.is_dir() else []):
+        ep = Episode(d)
+        if not (d.is_dir() and NAME_RE.match(d.name) and ep.script_path.exists()):
+            continue
+        script = ep.script()
+        images = ep.images()
+        exports = sorted(ep.export_dir.glob("*.mp4")) if ep.export_dir.is_dir() else []
+        first = next((images[k] for k in sorted(images)), None)
+        out.append({
+            "name": d.name, "title": script.title, "scenes": len(script.scenes),
+            "images": sum(1 for s in script.scenes if int(s.id) in images), "words": script.word_count,
+            "narration": ep.narration() is not None, "exports": [p.name for p in exports],
+            "thumb": file_url(ep, thumbnail(ep, first)) if first else None,
+            "job": jobs.status(d.name),
+        })
+    return out
+
+
+class NewEpisode(BaseModel):
+    name: str
+    title: str = ""
+
+
+@app.post("/api/episodes")
+def create_episode(body: NewEpisode):
+    ep = episode(body.name, must_exist=False)
+    if ep.dir.exists():
+        raise HTTPException(400, f"'{body.name}' already exists")
+    episodes_root().mkdir(parents=True, exist_ok=True)
+    ep.create(body.title.strip() or body.name.replace("-", " ").title())
+    ep.plan()
+    return episode_state(body.name)
+
+
+@app.get("/api/episodes/{name}")
+def episode_state(name: str):
+    ep = episode(name)
+    report = _errors(ep.plan)  # refresh yaml + shot list from the script, keep edits
+    settings = ep.settings()
+    images = ep.images()
+    scenes = []
+    for sc in scene_specs(ep):
+        s = sc["scene"]
+        img = images.get(int(s.id))
+        scenes.append({
+            "id": s.id, "chapter": s.chapter, "text": s.text, "note": s.image_note, "words": len(s.words),
+            "seconds": scene_duration(ep, s),
+            "image": {"thumb": file_url(ep, thumbnail(ep, img)), "full": file_url(ep, img), "name": img.name}
+            if img else None,
+            "auto": {"look": sc["auto"], "word": sc["auto_word"]} if sc["auto"] else None,
+            "override": sc["override"], "spec": asdict(sc["spec"]),
+        })
+    narration = ep.narration()
+    music = ep.music(settings) if (settings.music is None or (ep.dir / settings.music).exists()) else None
+    exports = []
+    if ep.export_dir.is_dir():
+        for p in sorted(ep.export_dir.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True):
+            if p.suffix in (".mp4", ".srt", ".txt"):
+                exports.append({"name": p.name, "url": file_url(ep, p), "size": p.stat().st_size,
+                                "mtime": int(p.stat().st_mtime)})
+    chapters_txt = ep.export_dir / "chapters.txt"
+    return {
+        "name": name, "title": report["title"], "summary": report, "settings": asdict(settings),
+        "script": ep.script_path.read_text(encoding="utf-8"), "scenes": scenes,
+        "narration": {"name": narration.name, "seconds": round(audio.duration(narration), 1),
+                      "url": file_url(ep, narration)} if narration else None,
+        "music": {"name": music.name, "url": file_url(ep, music)} if music else None,
+        "exports": exports, "chapters": chapters_txt.read_text() if chapters_txt.exists() else None,
+        "job": jobs.status(name),
+    }
+
+
+class ScriptBody(BaseModel):
+    text: str
+
+
+@app.put("/api/episodes/{name}/script")
+def save_script(name: str, body: ScriptBody):
+    ep = episode(name)
+    ep.script_path.write_text(body.text, encoding="utf-8")
+    return episode_state(name)
+
+
+@app.put("/api/episodes/{name}/settings")
+def save_settings(name: str, body: dict):
+    ep = episode(name)
+    _errors(lambda: ep.update_settings(body))
+    return episode_state(name)
+
+
+@app.put("/api/episodes/{name}/scenes/{scene_id}")
+def save_scene_look(name: str, scene_id: str, body: dict):
+    ep = episode(name)
+    _errors(lambda: ep.set_scene_look(scene_id, body))
+    return episode_state(name)
+
+
+async def _read_upload(file: UploadFile) -> tuple[bytes, str]:
+    data = await file.read()
+    if len(data) > MAX_UPLOAD:
+        raise HTTPException(400, "File is too large")
+    return data, Path(file.filename or "").suffix.lower()
+
+
+@app.post("/api/episodes/{name}/scenes/{scene_id}/image")
+async def upload_image(name: str, scene_id: str, file: UploadFile = File(...)):
+    ep = episode(name)
+    data, ext = await _read_upload(file)
+    if not any(s.id == f"{int(scene_id):03d}" for s in ep.script().scenes):
+        raise HTTPException(404, f"No scene {scene_id}")
+    await run_in_threadpool(lambda: _errors(lambda: ep.save_image(scene_id, data, ext)))
+    return episode_state(name)
+
+
+@app.post("/api/episodes/{name}/audio/{kind}")
+async def upload_audio(name: str, kind: str, file: UploadFile = File(...)):
+    ep = episode(name)
+    data, ext = await _read_upload(file)
+    _errors(lambda: ep.save_audio(kind, data, ext))
+    if kind == "music":
+        _errors(lambda: ep.update_settings({"music": None}))  # use the uploaded music.* file
+    return episode_state(name)
+
+
+@app.post("/api/episodes/{name}/scenes/{scene_id}/preview")
+async def scene_preview(name: str, scene_id: str):
+    ep = episode(name)
+    sid = f"{int(scene_id):03d}"
+    result = await run_in_threadpool(lambda: _errors(lambda: preview_scene(ep, sid)))
+    return {"url": file_url(ep, result["path"]), "seconds": result["duration"], "spec": result["spec"],
+            "placeholder": result["placeholder"]}
+
+
+# ---- builds -------------------------------------------------------------------------------------------------
+
+class BuildBody(BaseModel):
+    draft: bool = True
+
+
+@app.post("/api/episodes/{name}/build")
+def start_build(name: str, body: BuildBody):
+    ep = episode(name)
+    if ep.narration() is None:
+        raise HTTPException(400, "Add your narration recording first.")
+    try:
+        jobs.start(name, ep.dir, body.draft)
+    except RuntimeError as e:
+        raise HTTPException(409, str(e)) from e
+    return jobs.status(name)
+
+
+@app.get("/api/episodes/{name}/build")
+def build_status(name: str):
+    episode(name)
+    return jobs.status(name)
+
+
+@app.delete("/api/episodes/{name}/build")
+def cancel_build(name: str):
+    episode(name)
+    return {"cancelled": jobs.cancel(name)}
+
+
+# ---- files + page -------------------------------------------------------------------------------------------
+
+@app.get("/files/{name}/{path:path}")
+def episode_file(name: str, path: str):
+    ep = episode(name)
+    if not (path.startswith(SERVABLE) or AUDIO_RE.match(path)):
+        raise HTTPException(404)
+    full = (ep.dir / path).resolve()
+    if not full.is_relative_to(ep.dir.resolve()) or not full.is_file():
+        raise HTTPException(404)
+    return FileResponse(full)
+
+
 app.mount("/static", StaticFiles(directory=WEB_STATIC_DIR), name="static")
-app.mount("/renders", StaticFiles(directory=CUSTOM_RENDERS_DIR), name="renders")
+
 
 @app.get("/")
 def index():
     return FileResponse(WEB_STATIC_DIR / "index.html")
 
-@app.get("/api/data")
-def get_data():
-    images = [
-        {
-            "id": "warriors",
-            "title": "Samurai Warriors in Field",
-            "source": "/art/warriors.png",
-            "approaches": {
-                "approach1": {
-                    "mp4": "/experiments/approach_1_semantic_procedural/warriors_approach1.mp4",
-                    "gif": "/experiments/approach_1_semantic_procedural/warriors_approach1.gif",
-                },
-                "approach2": {
-                    "mp4": "/experiments/approach_2_depth_mesh_parallax/warriors_approach2.mp4",
-                    "gif": "/experiments/approach_2_depth_mesh_parallax/warriors_approach2.gif",
-                },
-                "approach3": {
-                    "mp4": "/experiments/approach_3_multilayer_2d_parallax/warriors_approach3.mp4",
-                    "gif": "/experiments/approach_3_multilayer_2d_parallax/warriors_approach3.gif",
-                },
-                "approach4": {
-                    "mp4": "/experiments/approach_4_subtle_2d_breathing/warriors_approach4.mp4",
-                    "gif": "/experiments/approach_4_subtle_2d_breathing/warriors_approach4.gif",
-                }
-            },
-            "layers": {
-                "bg": "/static/layers/warriors/bg.png",
-                "mid": "/static/layers/warriors/mid.png",
-                "fg": "/static/layers/warriors/fg.png"
-            }
-        },
-        {
-            "id": "army",
-            "title": "Imperial Army with Banners",
-            "source": "/art/army.png",
-            "approaches": {
-                "approach1": {
-                    "mp4": "/experiments/approach_1_semantic_procedural/army_approach1.mp4",
-                    "gif": "/experiments/approach_1_semantic_procedural/army_approach1.gif",
-                },
-                "approach2": {
-                    "mp4": "/experiments/approach_2_depth_mesh_parallax/army_approach2.mp4",
-                    "gif": "/experiments/approach_2_depth_mesh_parallax/army_approach2.gif",
-                },
-                "approach3": {
-                    "mp4": "/experiments/approach_3_multilayer_2d_parallax/army_approach3.mp4",
-                    "gif": "/experiments/approach_3_multilayer_2d_parallax/army_approach3.gif",
-                },
-                "approach4": {
-                    "mp4": "/experiments/approach_4_subtle_2d_breathing/army_approach4.mp4",
-                    "gif": "/experiments/approach_4_subtle_2d_breathing/army_approach4.gif",
-                }
-            },
-            "layers": {
-                "bg": "/static/layers/army/bg.png",
-                "mid": "/static/layers/army/mid.png",
-                "fg": "/static/layers/army/fg.png"
-            }
-        },
-        {
-            "id": "king",
-            "title": "King in the Throne Hall",
-            "source": "/art/king.png",
-            "approaches": {
-                "approach1": {
-                    "mp4": "/experiments/approach_1_semantic_procedural/king_approach1.mp4",
-                    "gif": "/experiments/approach_1_semantic_procedural/king_approach1.gif",
-                },
-                "approach2": {
-                    "mp4": "/experiments/approach_2_depth_mesh_parallax/king_approach2.mp4",
-                    "gif": "/experiments/approach_2_depth_mesh_parallax/king_approach2.gif",
-                },
-                "approach3": {
-                    "mp4": "/experiments/approach_3_multilayer_2d_parallax/king_approach3.mp4",
-                    "gif": "/experiments/approach_3_multilayer_2d_parallax/king_approach3.gif",
-                },
-                "approach4": {
-                    "mp4": "/experiments/approach_4_subtle_2d_breathing/king_approach4.mp4",
-                    "gif": "/experiments/approach_4_subtle_2d_breathing/king_approach4.gif",
-                }
-            },
-            "layers": {
-                "bg": "/static/layers/king/bg.png",
-                "mid": "/static/layers/king/mid.png",
-                "fg": "/static/layers/king/fg.png"
-            }
-        },
-        {
-            "id": "fox",
-            "title": "Forest Spirit & Kitsune Fox",
-            "source": "/art/fox.png",
-            "approaches": {
-                "approach1": {
-                    "mp4": "/experiments/approach_1_semantic_procedural/fox_approach1.mp4",
-                    "gif": "/experiments/approach_1_semantic_procedural/fox_approach1.gif",
-                },
-                "approach2": {
-                    "mp4": "/experiments/approach_2_depth_mesh_parallax/fox_approach2.mp4",
-                    "gif": "/experiments/approach_2_depth_mesh_parallax/fox_approach2.gif",
-                },
-                "approach3": {
-                    "mp4": "/experiments/approach_3_multilayer_2d_parallax/fox_approach3.mp4",
-                    "gif": "/experiments/approach_3_multilayer_2d_parallax/fox_approach3.gif",
-                },
-                "approach4": {
-                    "mp4": "/experiments/approach_4_subtle_2d_breathing/fox_approach4.mp4",
-                    "gif": "/experiments/approach_4_subtle_2d_breathing/fox_approach4.gif",
-                }
-            },
-            "layers": {
-                "bg": "/static/layers/fox/bg.png",
-                "mid": "/static/layers/fox/mid.png",
-                "fg": "/static/layers/fox/fg.png"
-            }
-        }
-    ]
-
-    approaches_info = {
-        "approach1": {
-            "title": "Approach 1: Semantic Procedural Shaders",
-            "badge": "From test.txt",
-            "motion_type": "Procedural Wind & Sky Drift",
-            "description": "Segments semantic elements (Sky, Foliage, Light). Applies wind sway to trees, directional drift to clouds, and subtle sun luminosity pulses. Leaves character silhouettes completely rigid.",
-            "pros": "100% stable character art; realistic natural foliage flutter.",
-            "cons": "Static characters without bodily motion."
-        },
-        "approach2": {
-            "title": "Approach 2: 2.5D Depth Mesh Parallax",
-            "badge": "From test.txt",
-            "motion_type": "Continuous Camera Orbit Mesh",
-            "description": "Continuous depth warping where a virtual camera executes a figure-8 orbit. Displaces pixels according to Depth-Anything-V2.",
-            "pros": "Creates 3D depth perception automatically.",
-            "cons": "Can feel like liquid/rubber warping ('water effect') when applied continuously to solid vector lines."
-        },
-        "approach3": {
-            "title": "Approach 3: Multi-Layer 2D Illustration Parallax",
-            "badge": "Recommended (Website Parallax)",
-            "motion_type": "Discrete Cutout Multiplane Translation",
-            "description": "Separates the artwork into discrete 2D cut-out planes (inpainted background, characters/subject, foreground). Strictly applies rigid 2D affine translations (dX, dY) with zero pixel stretching or warping.",
-            "pros": "Exact Firewatch / website parallax look. Preserves crisp vector illustration sharpness with ZERO rubber distortion.",
-            "cons": "Requires clean silhouette matting and inpainting behind occluded planes."
-        },
-        "approach4": {
-            "title": "Approach 4: Micro-Motion Parallax + Character Breathing",
-            "badge": "Subtle Living Storybook",
-            "motion_type": "Micro X/Y Parallax + Base-Anchored Breathing",
-            "description": "Multi-layer 2D parallax with micro-translations (2-4px) combined with an organic vertical chest breathing scale (1.007x) anchored at the characters' feet, plus synchronized warm ambient radiance.",
-            "pros": "Gives characters a gentle heartbeat and breath of life while remaining 100% faithful to the 2D illustration.",
-            "cons": "Motion is intentionally subtle (designed for YouTube storytelling loops)."
-        }
-    }
-
-    return {"images": images, "approaches": approaches_info}
-
-@app.post("/api/render_custom")
-def render_custom(
-    image_id: str = Form(...),
-    bg_x: float = Form(-3.0),
-    bg_y: float = Form(-1.5),
-    subj_x: float = Form(3.0),
-    subj_y: float = Form(1.5),
-    breathing: float = Form(0.007),
-    duration: float = Form(4.0)
-):
-    if image_id not in ("warriors", "army", "king", "fox"):
-        return JSONResponse({"error": "Unknown image"}, status_code=400)
-
-    img_path, depth_path = str(sample_image(image_id)), str(sample_depth(image_id))
-    out_name = f"custom_{image_id}_{int(duration)}s"
-    out_mp4 = str(CUSTOM_RENDERS_DIR / f"{out_name}.mp4")
-    out_gif = str(CUSTOM_RENDERS_DIR / f"{out_name}.gif")
-    
-    # Import approach 4 engine with customized parameters
-    from motion_studio.approaches.a4_breathing import extract_layers_v4
-    img = cv2.imread(img_path)
-    depth = cv2.imread(depth_path, cv2.IMREAD_GRAYSCALE)
-    h, w = img.shape[:2]
-    scale = 720.0 / h
-    th, tw = int(h * scale), int(w * scale)
-    tw = tw if tw % 2 == 0 else tw - 1
-    th = th if th % 2 == 0 else th - 1
-    
-    img_s = cv2.resize(img, (tw, th), interpolation=cv2.INTER_AREA)
-    depth_s = cv2.resize(depth, (tw, th), interpolation=cv2.INTER_AREA)
-    
-    layers = extract_layers_v4(img_s, depth_s)
-    pad = layers["pad"]
-    bg_clean = layers["bg_clean"]
-    img_padded = layers["img_padded"]
-    mid_alpha = layers["mid_alpha"]
-    fg_alpha = layers["fg_alpha"]
-    has_foreground = layers["has_foreground"]
-    ax, ay = layers["anchor_x"], layers["anchor_y"]
-    
-    fps = 30
-    total_frames = int(duration * fps)
-    cmd = [
-        "ffmpeg", "-y", "-f", "rawvideo", "-vcodec", "rawvideo",
-        "-s", f"{tw}x{th}", "-pix_fmt", "bgr24", "-r", str(fps), "-i", "-",
-        "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "18", "-preset", "veryfast",
-        out_mp4
-    ]
-    proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
-    
-    for f in range(total_frames):
-        tau = 2 * math.pi * (f / total_frames)
-        bg_dx = bg_x * math.sin(tau)
-        bg_dy = bg_y * math.cos(tau)
-        M_bg = np.float32([[1, 0, bg_dx - pad], [0, 1, bg_dy - pad]])
-        frame_bg = cv2.warpAffine(bg_clean, M_bg, (tw, th), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REFLECT).astype(np.float32)
-        
-        mid_dx = subj_x * math.sin(tau)
-        mid_dy = subj_y * math.cos(tau)
-        sy = 1.0 + breathing * math.sin(tau)
-        sx = 1.0 + (breathing * 0.35) * math.sin(tau)
-        
-        M_mid = np.float32([
-            [sx, 0, (1.0 - sx) * ax + mid_dx - pad],
-            [0, sy, (1.0 - sy) * ay + mid_dy - pad]
-        ])
-        frame_mid = cv2.warpAffine(img_padded, M_mid, (tw, th), flags=cv2.INTER_LINEAR).astype(np.float32)
-        alpha_mid_s = cv2.warpAffine(mid_alpha, M_mid, (tw, th), flags=cv2.INTER_LINEAR)[:, :, None]
-        
-        comp = frame_bg * (1.0 - alpha_mid_s) + frame_mid * alpha_mid_s
-        final_frame = np.clip(comp, 0, 255).astype(np.uint8)
-        proc.stdin.write(final_frame.tobytes())
-        
-    proc.stdin.close()
-    proc.wait()
-    
-    subprocess.run([
-        "ffmpeg", "-y", "-i", out_mp4,
-        "-vf", "fps=10,scale=320:-1:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse",
-        out_gif
-    ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    
-    return {
-        "mp4": f"/renders/{out_name}.mp4",
-        "gif": f"/renders/{out_name}.gif",
-        "status": "success"
-    }
 
 def main():
     import argparse
@@ -295,6 +279,8 @@ def main():
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8010)  # 8000 is used by the Shorts Studio
     args = parser.parse_args()
+    episodes_root().mkdir(parents=True, exist_ok=True)
+    print(f"Motion Studio: http://{args.host}:{args.port}  (episodes in {episodes_root()})")
     uvicorn.run(app, host=args.host, port=args.port)
 
 

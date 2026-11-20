@@ -14,7 +14,18 @@ python3 -m venv .venv
 .venv/bin/pip install -e .
 ```
 
-## Make an episode
+## Motion Studio (the web app)
+
+```bash
+.venv/bin/motion-studio            # then open http://127.0.0.1:8010
+```
+
+Everything below can be done in the browser: create an episode, write the script, upload your narration and music,
+drop an image onto each scene, change any scene's look from dropdowns, preview a single scene in a few seconds,
+build a draft or the final video (with progress and cancel), then watch it and download the video, subtitles and
+chapters. On a remote machine, forward port 8010 (VS Code does this from the Ports panel).
+
+## Make an episode from the command line
 
 ```bash
 .venv/bin/motion-episode new episodes/roman-soldier --title "A Day in the Life of a Roman Soldier"
@@ -68,8 +79,6 @@ are several times faster. Episodes live in `episodes/`, which is not committed t
 # Seamless loop
 .venv/bin/motion-batch --image my_scenes/forest.png --preset magic_forest --loop --duration 6
 
-# Review gallery + live parallax playground: http://127.0.0.1:8010
-.venv/bin/motion-studio
 ```
 
 - **Moves:** `push_in`, `pull_out`, `pan_left`, `pan_right`, `tilt_up`, `tilt_down`, `static`; loops: `drift`, `breathe`.
@@ -114,9 +123,8 @@ src/motion_studio/
   engine.py          older warp-based preset engine (kept for reference)
   approaches/        the four original experiments (a1..a4)
   batch.py           motion-batch CLI
-  web_layers.py      exports bg/mid/fg layers for the web playground
   episode/           motion-episode: script, voice, timing, subtitles, timeline, mix
-  web/               FastAPI app (motion-studio) + static UI
+  web/               motion-studio: FastAPI app, build jobs, and the editor page (static/)
   paths.py           every project path in one place
 assets/
   samples/           reference illustrations in the target art style

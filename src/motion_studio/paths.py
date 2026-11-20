@@ -10,6 +10,7 @@ DEPTH_DIR = ASSETS / "depth"            # precomputed depth maps, <stem>.png
 EXPERIMENTS_DIR = ROOT / "experiments"  # rendered comparisons of approaches 1-4
 MODELS_DIR = ROOT / "models"            # downloaded model weights (git-ignored)
 OUTPUT_DIR = ROOT / "output"            # everything you render (git-ignored)
+EPISODES_DIR = ROOT / "episodes"        # your episodes (git-ignored)
 DEPTH_CACHE_DIR = OUTPUT_DIR / "depth_cache"
 CUSTOM_RENDERS_DIR = OUTPUT_DIR / "custom_renders"
 
