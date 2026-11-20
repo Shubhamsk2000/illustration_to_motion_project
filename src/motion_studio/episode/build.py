@@ -11,6 +11,7 @@ from motion_studio.camera import auto_move
 from motion_studio.episode import audio
 from motion_studio.episode.align import align_words, scene_timings, transcribe
 from motion_studio.episode.captions import chapters, write_chapters, write_srt
+from motion_studio.episode.looks import suggest_look
 from motion_studio.episode.project import Episode
 from motion_studio.episode.timeline import Shot, make_placeholder, render_timeline
 from motion_studio.scene import PRESETS, spec_from_preset
@@ -36,9 +37,12 @@ def clean_voice(ep: Episode, enhance: bool) -> Path:
     return out
 
 
-def scene_spec(index: int, default_preset: str, override: dict):
-    """Per-scene look: the scene's own preset/settings, else the default preset with a varied camera move."""
-    preset = override.get("preset", default_preset)
+def scene_spec(index: int, default_preset: str, override: dict, auto_preset: str | None = None):
+    """Per-scene look: the scene's own settings, else the look suggested by its words, else the default preset.
+
+    Unless the scene sets its own move or preset, the camera move varies from scene to scene.
+    """
+    preset = override.get("preset", auto_preset or default_preset)
     spec = spec_from_preset(preset, **{k: v for k, v in override.items() if k != "preset"})
     if "move" not in override and "preset" not in override:
         spec = replace(spec, move=auto_move(index))
@@ -81,7 +85,8 @@ def build(folder, draft: bool = False, allow_missing: bool = False) -> dict:
             img = ep.build_dir / "placeholders" / f"{s.id}.png"
             if not img.exists():
                 make_placeholder(img, s.id, s.text)
-        shots.append(Shot(s.id, img, scene_spec(i, settings.default_preset, overrides.get(s.id, {})),
+        auto = suggest_look(s.text, s.image_note)[0] if settings.auto_look else None
+        shots.append(Shot(s.id, img, scene_spec(i, settings.default_preset, overrides.get(s.id, {}), auto),
                           tm.start, tm.end, placeholder))
 
     # 3. Video

@@ -11,6 +11,18 @@ def isolated_caches(tmp_path, monkeypatch):
 
     monkeypatch.setattr(scene, "LAYER_CACHE_DIR", tmp_path / "layers")
     monkeypatch.setattr(depth, "DEPTH_CACHE_DIR", tmp_path / "depth")
+    # LaMa takes ~5 s per image; tests use the fast classic fill unless they ask for the real one.
+    monkeypatch.setenv("MOTION_STUDIO_NO_LAMA", "1")
+
+
+@pytest.fixture
+def with_lama(monkeypatch):
+    from motion_studio.models import lama_inpaint
+
+    monkeypatch.delenv("MOTION_STUDIO_NO_LAMA", raising=False)
+    probe = lama_inpaint(np.zeros((8, 8, 3), np.uint8), np.zeros((8, 8), np.uint8))
+    if probe is None:
+        pytest.skip("LaMa model not available (offline?)")
 
 
 def synthetic_scene(tmp_path, w, h, name="scene.png"):

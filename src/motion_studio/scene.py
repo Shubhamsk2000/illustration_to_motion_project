@@ -16,11 +16,13 @@ import numpy as np
 from motion_studio.atmosphere import Particles
 from motion_studio.camera import camera_at
 from motion_studio.depth import depth_for_image, file_hash
+from motion_studio.effects import Glow, Mist
 from motion_studio.encode import VideoWriter
 from motion_studio.layers import Layers, split_layers
 from motion_studio.paths import OUTPUT_DIR
 
 LAYER_CACHE_DIR = OUTPUT_DIR / "cache" / "layers"
+LAYERS_VERSION = "v2"  # bump when layer splitting or the fill changes, so caches are rebuilt
 FITS = ["auto", "crop", "blur"]
 
 
@@ -33,6 +35,8 @@ class SceneSpec:
     atmosphere: str = "none"      # see atmosphere.KIND_NAMES
     particle_count: int | None = None
     light: float = 0.03           # warm light pulse; 0 = off
+    mist: str = "none"            # fog (drifts behind the subject) | smoke (rises over everything)
+    glow: str = "none"            # rays (light shafts from the brightest spot) | firelight (flicker around fire)
     loop: bool = False            # seamless loop instead of a one-way move
     fit: str = "auto"             # auto | crop (fill 16:9) | blur (whole image on a blurred backdrop)
 
@@ -42,10 +46,13 @@ PRESETS: dict[str, dict] = {
     "portrait": dict(move="push_in", strength=0.6, breathing=0.008),
     "epic": dict(move="push_in", strength=1.6, depth=1.4, atmosphere="dust", light=0.05),
     "calm": dict(move="drift", strength=0.6, light=0.02),
-    "campfire": dict(move="push_in", strength=0.7, atmosphere="embers", light=0.08),
+    "campfire": dict(move="push_in", strength=0.7, atmosphere="embers", glow="firelight", light=0.04),
     "winter": dict(move="pan_right", atmosphere="snow", light=0.0),
     "storm": dict(move="push_in", strength=0.8, atmosphere="rain", light=0.0),
     "magic_forest": dict(move="drift", atmosphere="fireflies", light=0.04),
+    "misty": dict(move="push_in", strength=0.7, mist="fog", glow="rays", light=0.02),
+    "sunlit": dict(move="push_in", atmosphere="dust", glow="rays", light=0.03),
+    "battle": dict(move="push_in", strength=1.4, depth=1.3, atmosphere="embers", mist="smoke", light=0.05),
 }
 
 
@@ -67,7 +74,7 @@ def choose_fit(fit: str, image_aspect: float, frame_aspect: float) -> str:
 
 def _load_layers(image_path: Path, plate: np.ndarray, depth: np.ndarray | None) -> Layers:
     ph, pw = plate.shape[:2]
-    key = f"{file_hash(image_path)}_{pw}x{ph}"
+    key = f"{file_hash(image_path)}_{pw}x{ph}_{LAYERS_VERSION}"
     cache = LAYER_CACHE_DIR / f"{key}.npz"
     if depth is None and cache.exists():
         z = np.load(cache)
@@ -128,9 +135,18 @@ class SceneRenderer:
         self.particles = None
         if sp.atmosphere and sp.atmosphere != "none":
             self.particles = Particles(sp.atmosphere, self.ow, self.oh, self.duration, sp.loop, sp.particle_count)
+        self.mist = None
+        if sp.mist and sp.mist != "none":
+            self.mist = Mist(sp.mist, self.ow, self.oh, self.duration, sp.loop)
+        self.glow = None
+        if sp.glow and sp.glow != "none":
+            self.glow = Glow(sp.glow, self.layers.image, self.duration)
         self.breath_cycles = max(1, round(self.duration / 3.5))
         self.light_cycles = max(1, round(self.duration / 3.5))
-        self.flicker_cycles = max(2, round(self.duration * 1.3)) if sp.atmosphere == "embers" else 0
+        no_fire_found = sp.glow == "firelight" and self.glow.map is None
+        # Fire with no visible flame: flicker the whole picture instead.
+        flicker = sp.atmosphere == "embers" or no_fire_found
+        self.flicker_cycles = max(2, round(self.duration * 1.3)) if flicker else 0
         self._lut_base = np.arange(256, dtype=np.float32)
 
     # ---- setup -------------------------------------------------------------------------------------------
@@ -204,7 +220,11 @@ class SceneRenderer:
         sp, L = self.spec, self.layers
         zoom, dx, dy = camera_at(sp.move, t, sp.strength)
 
-        frame = self._warp(L.background, self._matrix(self.p_bg, zoom, dx, dy))
+        m_bg = self._matrix(self.p_bg, zoom, dx, dy)
+        frame = self._warp(L.background, m_bg)
+        bg_shift = (dx * self.ow * self.p_bg, dy * self.oh * self.p_bg)
+        if self.mist is not None and self.mist.behind_subject:
+            frame = self.mist.apply(frame, t, bg_shift)
 
         m_mid = self._matrix(1.0, zoom, dx, dy)
         if sp.breathing > 0:
@@ -220,6 +240,11 @@ class SceneRenderer:
             m_fg = self._matrix(self.p_fg, zoom, dx, dy)
             a = self._warp(L.fg_alpha, m_fg)
             frame = cv2.blendLinear(self._warp(L.image, m_fg), frame, a, 1.0 - a)
+
+        if self.glow is not None:
+            frame = self.glow.apply(frame, t, lambda m: self._warp(m, m_bg))
+        if self.mist is not None and not self.mist.behind_subject:
+            frame = self.mist.apply(frame, t, bg_shift)
 
         if self.particles is not None:
             shift = (dx * self.ow * self.p_particles, dy * self.oh * self.p_particles)
@@ -249,7 +274,12 @@ class SceneRenderer:
                 if progress and (i % 12 == 0 or i == len(ts) - 1):
                     progress((i + 1) / len(ts))
         took = time.time() - t0
+        notes = []
+        if self.glow is not None and self.glow.map is None:
+            notes.append("no fire found, flickering the whole picture" if self.spec.glow == "firelight"
+                         else "no bright light source found, so no rays")
         return {"path": str(out_path), "frames": self.n_frames, "seconds": self.duration, "fit": self.fit,
+                "notes": notes,
                 "render_seconds": round(took, 2), "spec": asdict(self.spec)}
 
 

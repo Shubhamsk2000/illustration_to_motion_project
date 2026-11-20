@@ -19,6 +19,7 @@ from pathlib import Path
 
 from motion_studio.atmosphere import KIND_NAMES
 from motion_studio.camera import ALL_MOVES, auto_move
+from motion_studio.effects import GLOW_NAMES, MIST_NAMES
 from motion_studio.paths import DEPTH_CACHE_DIR, DEPTH_DIR, OUTPUT_DIR, SAMPLES_DIR
 from motion_studio.scene import FITS, PRESETS, SceneRenderer, spec_from_preset
 
@@ -37,7 +38,7 @@ def render_one(image: Path, out: Path, args, index: int) -> dict:
         move = auto_move(index, loop=args.loop) if not args.preset else None
     spec = spec_from_preset(
         args.preset, move=move, strength=args.strength, depth=args.depth, breathing=args.breathing,
-        atmosphere=args.atmosphere, light=args.light, loop=args.loop or None, fit=args.fit,
+        atmosphere=args.atmosphere, mist=args.mist, glow=args.glow, light=args.light, loop=args.loop or None, fit=args.fit,
     )
     size = (960, 540) if args.draft else tuple(int(v) for v in args.size.lower().split("x"))
     renderer = SceneRenderer(image, spec, size=size, fps=args.fps, duration=args.duration)
@@ -64,6 +65,8 @@ def run_scenes(images: list[Path], args) -> None:
         spec = stats["spec"]
         print(f"  -> {out}  ({spec['move']}, {spec['atmosphere']}, fit={stats['fit']}, "
               f"{stats['render_seconds']}s for {stats['seconds']}s of video)")
+        for note in stats["notes"]:
+            print(f"  ! {note}")
         report.append(stats)
     took = time.time() - total_t0
     video = sum(s["seconds"] for s in report)
@@ -134,6 +137,8 @@ def main():
     look.add_argument("--depth", type=float, help="near/far separation (1.0 = normal)")
     look.add_argument("--breathing", type=float, help="subject breathing amount, 0 = off (default 0.006)")
     look.add_argument("--atmosphere", choices=KIND_NAMES, help="particles")
+    look.add_argument("--mist", choices=MIST_NAMES, help="fog drifts behind the subject, smoke rises over all")
+    look.add_argument("--glow", choices=GLOW_NAMES, help="light rays from the brightest spot, or firelight")
     look.add_argument("--light", type=float, help="warm light pulse, 0 = off (default 0.03)")
     look.add_argument("--loop", action="store_true", help="seamless loop instead of a one-way move")
     look.add_argument("--fit", choices=FITS, help="crop to fill 16:9, or show the whole image on a blurred backdrop")
