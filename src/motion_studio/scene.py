@@ -103,7 +103,8 @@ def _affine(m2x3: np.ndarray) -> np.ndarray:
 
 class SceneRenderer:
     def __init__(self, image_path, spec: SceneSpec | None = None, size=(1920, 1080), fps: float = 24,
-                 duration: float = 6.0, depth: np.ndarray | None = None):
+                 duration: float = 6.0, depth: np.ndarray | None = None, flat: bool = False):
+        """flat=True treats the picture as one plane (no depth, no fill): for title cards and placeholders."""
         self.image_path = Path(image_path)
         self.spec = spec or SceneSpec()
         self.W, self.H = (int(size[0]) // 2 * 2, int(size[1]) // 2 * 2)
@@ -127,7 +128,11 @@ class SceneRenderer:
         interp = cv2.INTER_AREA if s < 1 else cv2.INTER_LANCZOS4
         plate = cv2.resize(img, (pw, ph), interpolation=interp)
 
-        self.layers = _load_layers(self.image_path, plate, depth)
+        if flat:
+            self.layers = Layers(plate, plate, np.zeros(plate.shape[:2], np.float32), None,
+                                 (pw / 2, ph * 0.75), (pw / 2, ph / 2))
+        else:
+            self.layers = _load_layers(self.image_path, plate, depth)
         self._setup_camera(pw, ph)
         self._setup_backdrop(img)
 
