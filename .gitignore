@@ -10,3 +10,8 @@ __pycache__/
 # Rendered media (regenerate with the scripts)
 *.mp4
 *.gif
+
+# Local-only folders
+output/
+scratch/
+models/

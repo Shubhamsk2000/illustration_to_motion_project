@@ -13,6 +13,15 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 
+from motion_studio.paths import (
+    CUSTOM_RENDERS_DIR,
+    EXPERIMENTS_DIR,
+    SAMPLES_DIR,
+    WEB_STATIC_DIR,
+    sample_depth,
+    sample_image,
+)
+
 app = FastAPI(title="Illustration Motion Studio")
 
 app.add_middleware(
@@ -23,17 +32,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-os.makedirs("static", exist_ok=True)
-os.makedirs("experiments", exist_ok=True)
-os.makedirs("static/custom_renders", exist_ok=True)
+EXPERIMENTS_DIR.mkdir(parents=True, exist_ok=True)
+CUSTOM_RENDERS_DIR.mkdir(parents=True, exist_ok=True)
 
-app.mount("/experiments", StaticFiles(directory="experiments"), name="experiments")
-app.mount("/art", StaticFiles(directory="my_favourite_artstyle"), name="art")
-app.mount("/static", StaticFiles(directory="static"), name="static")
+app.mount("/experiments", StaticFiles(directory=EXPERIMENTS_DIR), name="experiments")
+app.mount("/art", StaticFiles(directory=SAMPLES_DIR), name="art")
+app.mount("/static", StaticFiles(directory=WEB_STATIC_DIR), name="static")
+app.mount("/renders", StaticFiles(directory=CUSTOM_RENDERS_DIR), name="renders")
 
 @app.get("/")
 def index():
-    return FileResponse("static/index.html")
+    return FileResponse(WEB_STATIC_DIR / "index.html")
 
 @app.get("/api/data")
 def get_data():
@@ -41,7 +50,7 @@ def get_data():
         {
             "id": "warriors",
             "title": "Samurai Warriors in Field",
-            "source": "/art/image.png",
+            "source": "/art/warriors.png",
             "approaches": {
                 "approach1": {
                     "mp4": "/experiments/approach_1_semantic_procedural/warriors_approach1.mp4",
@@ -69,7 +78,7 @@ def get_data():
         {
             "id": "army",
             "title": "Imperial Army with Banners",
-            "source": "/art/image copy.png",
+            "source": "/art/army.png",
             "approaches": {
                 "approach1": {
                     "mp4": "/experiments/approach_1_semantic_procedural/army_approach1.mp4",
@@ -97,7 +106,7 @@ def get_data():
         {
             "id": "king",
             "title": "King in the Throne Hall",
-            "source": "/art/image copy 2.png",
+            "source": "/art/king.png",
             "approaches": {
                 "approach1": {
                     "mp4": "/experiments/approach_1_semantic_procedural/king_approach1.mp4",
@@ -125,7 +134,7 @@ def get_data():
         {
             "id": "fox",
             "title": "Forest Spirit & Kitsune Fox",
-            "source": "/art/image copy 3.png",
+            "source": "/art/fox.png",
             "approaches": {
                 "approach1": {
                     "mp4": "/experiments/approach_1_semantic_procedural/fox_approach1.mp4",
@@ -199,22 +208,16 @@ def render_custom(
     breathing: float = Form(0.007),
     duration: float = Form(4.0)
 ):
-    img_map = {
-        "warriors": ("my_favourite_artstyle/image.png", "depth_anything_test.png"),
-        "army": ("my_favourite_artstyle/image copy.png", "depth_image_copy.png"),
-        "king": ("my_favourite_artstyle/image copy 2.png", "depth_image_copy_2.png"),
-        "fox": ("my_favourite_artstyle/image copy 3.png", "depth_image_copy_3.png"),
-    }
-    if image_id not in img_map:
+    if image_id not in ("warriors", "army", "king", "fox"):
         return JSONResponse({"error": "Unknown image"}, status_code=400)
-        
-    img_path, depth_path = img_map[image_id]
+
+    img_path, depth_path = str(sample_image(image_id)), str(sample_depth(image_id))
     out_name = f"custom_{image_id}_{int(duration)}s"
-    out_mp4 = f"static/custom_renders/{out_name}.mp4"
-    out_gif = f"static/custom_renders/{out_name}.gif"
+    out_mp4 = str(CUSTOM_RENDERS_DIR / f"{out_name}.mp4")
+    out_gif = str(CUSTOM_RENDERS_DIR / f"{out_name}.gif")
     
     # Import approach 4 engine with customized parameters
-    from experiments.approach_4_subtle_2d_breathing.run_approach_4 import extract_layers_v4
+    from motion_studio.approaches.a4_breathing import extract_layers_v4
     img = cv2.imread(img_path)
     depth = cv2.imread(depth_path, cv2.IMREAD_GRAYSCALE)
     h, w = img.shape[:2]
@@ -278,11 +281,22 @@ def render_custom(
     ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     
     return {
-        "mp4": f"/{out_mp4}",
-        "gif": f"/{out_gif}",
+        "mp4": f"/renders/{out_name}.mp4",
+        "gif": f"/renders/{out_name}.gif",
         "status": "success"
     }
 
-if __name__ == "__main__":
+def main():
+    import argparse
+
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+
+    parser = argparse.ArgumentParser(description="Motion Studio web app")
+    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--port", type=int, default=8010)  # 8000 is used by the Shorts Studio
+    args = parser.parse_args()
+    uvicorn.run(app, host=args.host, port=args.port)
+
+
+if __name__ == "__main__":
+    main()

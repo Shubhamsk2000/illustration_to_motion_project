@@ -65,12 +65,14 @@ def export_layers_for_web(img_path, depth_path, out_dir):
         
     print(f"Exported layers to {out_dir} (has_fg={has_foreground})")
 
+
+def main():
+    """Export bg/mid/fg PNG layers of the four reference scenes for the web gallery."""
+    from motion_studio.paths import SAMPLE_NAMES, WEB_STATIC_DIR, sample_depth, sample_image
+
+    for name in SAMPLE_NAMES:
+        export_layers_for_web(str(sample_image(name)), str(sample_depth(name)), str(WEB_STATIC_DIR / "layers" / name))
+
+
 if __name__ == "__main__":
-    images = [
-        ("my_favourite_artstyle/image.png", "depth_anything_test.png", "warriors"),
-        ("my_favourite_artstyle/image copy.png", "depth_image_copy.png", "army"),
-        ("my_favourite_artstyle/image copy 2.png", "depth_image_copy_2.png", "king"),
-        ("my_favourite_artstyle/image copy 3.png", "depth_image_copy_3.png", "fox"),
-    ]
-    for img_p, depth_p, name in images:
-        export_layers_for_web(img_p, depth_p, f"static/layers/{name}")
+    main()
