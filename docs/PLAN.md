@@ -17,17 +17,22 @@
 - The layer-splitting code exists in three near-identical copies (a3, a4, web_layers). Subjects are found by
   thresholding depth, and the hole behind them is filled with OpenCV inpainting, which smears on big subjects.
 
-## Phase 1: one engine that makes YouTube-ready scene clips
+## Phase 1: one engine that makes YouTube-ready scene clips — done
 
-1. Merge approaches 3 + 4 and the preset engine into **one layered engine** built from composable effects:
-   camera move, layer parallax, breathing, wind, light, particles. One copy of the layer-splitting code.
-2. **Documentary camera moves** that run once over any duration (slow push-in, pull-out, pan left/right, tilt)
-   in addition to seamless loops. A 7.4 s narrated beat gets a 7.4 s clip.
-3. **16:9 1080p output.** Going forward, generate images at 16:9. For portrait images: blurred-fill
-   background or a subject-aware crop.
-4. **Speed:** benchmark, then vectorise particles, render at 24/25 fps, cache depth/layers per image, render
-   scenes in parallel. Target: a 10-minute episode in under 30 minutes.
-5. A few golden-frame tests so refactors don't silently change the look.
+- New scene engine (`scene.py`) built from small parts: camera moves, layer split, particles, light, encoder.
+  One shared layer-splitting function (`layers.py`).
+- One-way documentary moves of any duration (push in/out, pan, tilt) plus seamless loops (drift, breathe).
+  Each plane moves by a different amount, so you get 2.5D depth without warping the art. Extra zoom is
+  calculated per move so the frame edge never shows (covered by tests).
+- 1920×1080 output: 16:9-ish images fill the frame (centred on the subject); portrait images are shown whole on
+  a blurred, shaded backdrop.
+- Looks: 8 presets, 5 particle types (dust, embers, fireflies, snow, rain), warm light pulse and fire flicker.
+- Speed: ~1.6–1.9 s per second of video for portrait images, ~2.7 s for full-frame 16:9 (the old engine needed
+  ~8 s at full frame). A 10-minute episode is about 20–30 minutes. `--draft` previews run faster than real time.
+- Depth and layer splits are cached; 56 tests including a golden frame.
+
+Known limits, for Phase 3: the fill behind subjects is soft, so strong pans show a smudge next to characters;
+small images upscaled to 1080p look soft.
 
 ## Phase 2: the episode pipeline (biggest win for the channel)
 

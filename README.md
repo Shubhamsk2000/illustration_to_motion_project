@@ -17,26 +17,54 @@ python3 -m venv .venv
 ## Use
 
 ```bash
-# Animate every image in a folder (default: assets/samples -> output/videos)
-.venv/bin/motion-batch --approach 4 --input_dir my_scenes --output_dir output/my_episode --duration 6
+# Every image in a folder -> one 1920x1080 clip each (camera move varies scene to scene)
+.venv/bin/motion-batch --input_dir my_scenes --output_dir output/my_episode --duration 7
 
-# One image
-.venv/bin/motion-batch --approach 3 --image my_scenes/market.png --output output/market.mp4
+# Quick 960x540 drafts to pick moves before the real render
+.venv/bin/motion-batch --input_dir my_scenes --draft
+
+# One image with a look, overriding parts of it
+.venv/bin/motion-batch --image my_scenes/camp.png --preset campfire --move pull_out --duration 8
+
+# Seamless loop
+.venv/bin/motion-batch --image my_scenes/forest.png --preset magic_forest --loop --duration 6
 
 # Review gallery + live parallax playground: http://127.0.0.1:8010
 .venv/bin/motion-studio
 ```
 
-Approaches: `1` semantic shaders, `2` depth-mesh warp, `3` multi-layer 2D parallax, `4` layered parallax with
-character breathing. The preset engine (`motion_studio.engine.render_animation`) adds camera moves, wind, sun glow
-and particles on top of depth parallax.
+- **Moves:** `push_in`, `pull_out`, `pan_left`, `pan_right`, `tilt_up`, `tilt_down`, `static`; loops: `drift`, `breathe`.
+- **Atmosphere:** `dust`, `embers`, `fireflies`, `snow`, `rain`.
+- **Presets:** `documentary`, `portrait`, `epic`, `calm`, `campfire`, `winter`, `storm`, `magic_forest`.
+- **Fit:** 16:9 (or close) images fill the frame; portrait images are shown whole on a blurred backdrop
+  (`--fit crop|blur` to force one). Generate images at 16:9, 1920 px wide or more, for the best result.
+- Tuning flags: `--strength`, `--depth`, `--breathing`, `--light`, `--fps`, `--size`. See `motion-batch -h`.
+- Depth maps and layer splits are cached in `output/`, so re-rendering an image is fast.
+
+The old experimental approaches are still available with `--approach 1..4`.
+
+## Tests
+
+```bash
+uv pip install --python .venv/bin/python -e ".[dev]"   # or: .venv/bin/pip install -e ".[dev]"
+.venv/bin/python -m pytest
+```
+
+`test_golden_frame` compares against a stored frame; after an intended change to the look, run it with
+`UPDATE_GOLDEN=1` to accept the new frame.
 
 ## Layout
 
 ```
 src/motion_studio/
-  engine.py          preset engine: depth parallax + wind + light + particles
-  approaches/        the four motion approaches (a1..a4)
+  scene.py           scene engine: image -> 16:9 clip (framing, layered parallax, breathing, light)
+  camera.py          documentary camera moves and loops
+  layers.py          splits an image into background / subject / foreground planes
+  atmosphere.py      particles: dust, embers, fireflies, snow, rain
+  depth.py           Depth-Anything-V2 depth with caching
+  encode.py          FFmpeg writer
+  engine.py          older warp-based preset engine (kept for reference)
+  approaches/        the four original experiments (a1..a4)
   batch.py           motion-batch CLI
   web_layers.py      exports bg/mid/fg layers for the web playground
   web/               FastAPI app (motion-studio) + static UI
@@ -46,6 +74,7 @@ assets/
   depth/             precomputed depth maps for the samples
 experiments/         rendered comparisons of the approaches (videos are git-ignored)
 docs/PLAN.md         improvement roadmap
+tests/               pytest suite (+ golden frame)
 output/              your renders (git-ignored)
 models/, scratch/    model weights and old debug images (git-ignored)
 ```

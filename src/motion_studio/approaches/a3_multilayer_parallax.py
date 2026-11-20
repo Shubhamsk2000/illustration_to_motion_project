@@ -1,4 +1,6 @@
 """
+Frozen experiment, kept for comparison. The product code uses motion_studio.layers and motion_studio.scene.
+
 Approach 3: Multi-Layer 2D Illustration Parallax (Website Parallax Style)
 - Splits illustration into discrete, crisp 2D cutout layers (Background, Subject/Midground, Foreground)
 - Background is inpainted behind subjects so occluded areas are completely filled
