@@ -1,4 +1,6 @@
 """
+Frozen experiment, kept for comparison. The product code uses motion_studio.layers and motion_studio.scene.
+
 Approach 4: Micro-Motion 2D Parallax with Character Breathing & Ambient Radiance
 - Discrete 2D cut-out planes (Background, Subject/Midground, Foreground)
 - Micro-translation on X/Y (subtle 2-4px multi-plane parallax)

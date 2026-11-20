@@ -18,6 +18,9 @@ dependencies = [
     "python-multipart",
 ]
 
+[project.optional-dependencies]
+dev = ["pytest"]
+
 [project.scripts]
 motion-batch = "motion_studio.batch:main"
 motion-studio = "motion_studio.web.app:main"
@@ -28,3 +31,6 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 motion_studio = ["web/static/**/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -15,41 +15,7 @@ import math
 import subprocess
 import numpy as np
 import cv2
-from PIL import Image
-from transformers import pipeline
-
-# Global cached depth model pipeline
-_DEPTH_PIPE = None
-
-def get_depth_pipeline():
-    global _DEPTH_PIPE
-    if _DEPTH_PIPE is None:
-        print("[MotionEngine] Loading Depth-Anything-V2-Small model...")
-        _DEPTH_PIPE = pipeline(task="depth-estimation", model="depth-anything/Depth-Anything-V2-Small-hf")
-    return _DEPTH_PIPE
-
-def estimate_depth(image_bgr_or_pil):
-    """Computes normalized depth map [0, 1] as float32."""
-    if isinstance(image_bgr_or_pil, np.ndarray):
-        img_rgb = cv2.cvtColor(image_bgr_or_pil, cv2.COLOR_BGR2RGB)
-        pil_img = Image.fromarray(img_rgb)
-    else:
-        pil_img = image_bgr_or_pil
-        
-    pipe = get_depth_pipeline()
-    result = pipe(pil_img)
-    depth_pil = result["depth"]
-    depth_np = np.array(depth_pil, dtype=np.float32)
-    
-    # Normalize to [0.0, 1.0] where 1.0 is closest to camera
-    d_min = depth_np.min()
-    d_max = depth_np.max()
-    if d_max > d_min:
-        depth_np = (depth_np - d_min) / (d_max - d_min)
-    else:
-        depth_np = np.zeros_like(depth_np)
-        
-    return depth_np
+from motion_studio.depth import estimate_depth, get_depth_pipeline  # noqa: F401 (re-exported)
 
 # Pre-defined storytelling presets
 PRESETS = {
